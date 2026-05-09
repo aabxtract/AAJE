@@ -1,41 +1,59 @@
-"""
-Message parser — classifies inbound WhatsApp messages into intents.
-Used by the session router to dispatch active-trader messages.
-"""
-import re
+def detect_intent(message: str, language: str = "en") -> str:
+    msg = message.lower().strip()
 
-INTENT_PATTERNS = {
-    "log_sale": re.compile(
-        r"\b(sold|made|earned|got|collected|received)\b.{0,30}(?:₦|N|NGN)?\d",
-        re.IGNORECASE,
-    ),
-    "log_expense": re.compile(
-        r"\b(spent|bought|paid|used|cost)\b.{0,30}(?:₦|N|NGN)?\d",
-        re.IGNORECASE,
-    ),
-    "check_balance": re.compile(
-        r"\b(balance|how much|check|vault|savings|kolo)\b",
-        re.IGNORECASE,
-    ),
-    "withdraw": re.compile(
-        r"\b(withdraw|take out|move out|send me|transfer to me)\b",
-        re.IGNORECASE,
-    ),
-    "pay_supplier": re.compile(
-        r"\b(pay|send to|transfer to)\b.{0,30}(?:₦|N|NGN)?\d",
-        re.IGNORECASE,
-    ),
-    "insight": re.compile(
-        r"\b(how am i doing|report|summary|performance|score|business)\b",
-        re.IGNORECASE,
-    ),
-    "help": re.compile(r"\b(help|sos|support|problem|issue)\b", re.IGNORECASE),
-}
+    INTENTS = {
+        "greeting": [
+            "hi", "hello", "hey", "start", "begin",
+            "ẹ káàbọ̀", "ndewo", "sannu", "how far",
+            "wetin dey"
+        ],
+        "summary": [
+            "summary", "report", "how far", "how i dey",
+            "wetin happen", "my report", "analytics",
+            "show me", "business"
+        ],
+        "vault_balance": [
+            "balance", "kolo", "vault", "savings",
+            "how much", "my money", "check"
+        ],
+        "withdraw": [
+            "withdraw", "cash out", "send to my account",
+            "i need money", "owo", "give me my money",
+            "abeg send"
+        ],
+        "pay_supplier": [
+            "pay", "send money", "transfer", "buy from",
+            "settle"
+        ],
+        "add_supplier": [
+            "add supplier", "new supplier", "save supplier",
+            "add contact", "new contact"
+        ],
+        "move_vault": [
+            "move", "shift", "transfer between",
+            "move from", "shift money"
+        ],
+        "change_language": [
+            "yoruba", "igbo", "hausa", "pidgin",
+            "english", "change language", "switch language"
+        ],
+        "change_pin": [
+            "change pin", "forgot pin", "reset pin",
+            "pin reset", "new pin"
+        ],
+        "help": [
+            "help", "human", "speak to someone",
+            "i have problem", "support", "issue",
+            "complaint", "useless", "scam"
+        ],
+        "trader_score": [
+            "score", "credit score", "passport",
+            "my score", "rating"
+        ],
+    }
 
-
-def classify_intent(text: str) -> str:
-    """Return the first matching intent or 'unknown'."""
-    for intent, pattern in INTENT_PATTERNS.items():
-        if pattern.search(text):
+    for intent, keywords in INTENTS.items():
+        if any(kw in msg for kw in keywords):
             return intent
+
     return "unknown"

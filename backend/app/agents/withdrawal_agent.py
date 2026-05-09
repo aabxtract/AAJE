@@ -1,14 +1,6 @@
-"""Withdrawal agent — handles trader withdrawal requests from vaults."""
-import logging
+async def handle_withdrawal(whatsapp_no: str, message: str, session: dict):
+    from app.services.twilio_client import send_text
+    await send_text(whatsapp_no, "Withdrawal features will be available soon.")
 
-from app.services import notifier
-
-logger = logging.getLogger(__name__)
-
-
-async def handle(wa_number: str, body: str, session: dict) -> None:
-    # TODO: parse amount + vault, verify PIN, execute Squad transfer
-    await notifier.send(
-        wa_number,
-        "💸 Withdrawal request received. Please enter your PIN to confirm:",
-    )
+async def execute_withdrawal(whatsapp_no: str, session: dict, db):
+    pass

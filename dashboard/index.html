@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AAJE Admin — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="logo">AAJE Admin</div>
+    <a href="index.html" class="active">📊 Overview</a>
+    <a href="pages/users.html">👥 Traders</a>
+    <a href="pages/transactions.html">💳 Transactions</a>
+    <a href="pages/escalations.html">🔒 Escalations</a>
+    <a href="pages/analytics.html">📈 Analytics</a>
+  </nav>
+  <main class="content">
+    <h1>Platform Overview</h1>
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-card"><span class="label">Total Traders</span><span class="value" id="total-traders">—</span></div>
+      <div class="stat-card"><span class="label">Active Today</span><span class="value" id="active-today">—</span></div>
+      <div class="stat-card"><span class="label">Transactions Today</span><span class="value" id="txns-today">—</span></div>
+      <div class="stat-card"><span class="label">Total Vault Balance</span><span class="value" id="vault-balance">—</span></div>
+    </div>
+    <canvas id="volume-chart" height="100"></canvas>
+  </main>
+  <script src="assets/app.js"></script>
+</body>
+</html>

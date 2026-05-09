@@ -1,67 +1,79 @@
 """
-Upstash Redis client — REST-based, no persistent TCP connection needed.
+Upstash Redis client — uses the upstash-redis SDK with async support.
 All keys are namespaced and TTL-managed so expired sessions self-delete.
 """
 import json
-from typing import Any
-
-import httpx
-
+from upstash_redis.asyncio import Redis
 from app.config import settings
 
-# TTL constants (seconds)
-SESSION_TTL = 1800       # 30 min
-PIN_ATTEMPTS_TTL = 600   # 10 min
-MONO_PENDING_TTL = 1800  # 30 min
-RATE_LIMIT_TTL = 60      # 60 sec
-
-_HEADERS = {
-    "Authorization": f"Bearer {settings.UPSTASH_REDIS_REST_TOKEN}",
-    "Content-Type": "application/json",
-}
-_BASE = settings.UPSTASH_REDIS_REST_URL.rstrip("/")
+redis = Redis(
+    url=settings.upstash_redis_rest_url,
+    token=settings.upstash_redis_rest_token,
+)
 
 
-async def _request(command: list) -> Any:
-    """Send a raw Redis command to Upstash REST endpoint."""
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(f"{_BASE}", headers=_HEADERS, json=command)
-        resp.raise_for_status()
-        return resp.json().get("result")
+async def get_session(whatsapp_no: str) -> dict:
+    """Get session from Redis. Returns default new session if not found."""
+    data = await redis.get(f"session:{whatsapp_no}")
+    if data:
+        return json.loads(data) if isinstance(data, str) else data
+    return {
+        "stage": "NEW",
+        "agent": None,
+        "language": None,
+        "pending_data": {},
+        "awaiting_pin": False,
+        "pin_action": None,
+        "step": 0,
+        "onboarding_complete": False,
+        "pin_attempts": 0,
+    }
 
 
-# ── Key builders ────────────────────────────────────────────────────────────
-
-def session_key(wa_no: str) -> str:
-    return f"session:{wa_no}"
-
-def pin_attempts_key(wa_no: str) -> str:
-    return f"pin_attempts:{wa_no}"
-
-def mono_pending_key(wa_no: str) -> str:
-    return f"mono_pending:{wa_no}"
-
-def rate_limit_key(wa_no: str) -> str:
-    return f"rate_limit:{wa_no}"
+async def save_session(whatsapp_no: str, data: dict):
+    """Save session with 30-minute TTL."""
+    await redis.setex(
+        f"session:{whatsapp_no}",
+        1800,
+        json.dumps(data),
+    )
 
 
-# ── Generic helpers ──────────────────────────────────────────────────────────
-
-async def get_json(key: str) -> dict | None:
-    raw = await _request(["GET", key])
-    return json.loads(raw) if raw else None
+async def clear_session(whatsapp_no: str):
+    await redis.delete(f"session:{whatsapp_no}")
 
 
-async def set_json(key: str, value: dict, ttl: int) -> None:
-    await _request(["SET", key, json.dumps(value), "EX", ttl])
+async def increment_pin_attempts(whatsapp_no: str) -> int:
+    """Increment PIN attempt counter. 10-minute TTL window."""
+    key = f"pin_attempts:{whatsapp_no}"
+    attempts = await redis.incr(key)
+    if attempts == 1:
+        await redis.expire(key, 600)
+    return attempts
 
 
-async def delete(key: str) -> None:
-    await _request(["DEL", key])
+async def clear_pin_attempts(whatsapp_no: str):
+    await redis.delete(f"pin_attempts:{whatsapp_no}")
 
 
-async def increment(key: str, ttl: int) -> int:
-    count = await _request(["INCR", key])
+async def set_mono_pending(whatsapp_no: str):
+    """Flag that this trader is in the Mono Connect flow."""
+    await redis.setex(f"mono_pending:{whatsapp_no}", 1800, "1")
+
+
+async def clear_mono_pending(whatsapp_no: str):
+    await redis.delete(f"mono_pending:{whatsapp_no}")
+
+
+async def is_mono_pending(whatsapp_no: str) -> bool:
+    result = await redis.get(f"mono_pending:{whatsapp_no}")
+    return result is not None
+
+
+async def set_rate_limit(whatsapp_no: str) -> int:
+    """Rate limit counter. 60-second window. Returns current count."""
+    key = f"rate_limit:{whatsapp_no}"
+    count = await redis.incr(key)
     if count == 1:
-        await _request(["EXPIRE", key, ttl])
+        await redis.expire(key, 60)
     return count

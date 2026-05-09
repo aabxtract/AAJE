@@ -3,62 +3,64 @@ Twilio outbound messaging client.
 
 Handles:
   - Outbound text messages
-  - Outbound media messages (voice notes via public URL)
-  - Interactive button messages
-
-This is used by background tasks AFTER the webhook has already acked.
+  - Outbound voice notes (via public URL)
+  - Interactive buttons (numbered list for sandbox)
+  - CTA buttons (link with label)
+  - Media messages (images, documents)
 """
-import logging
-
 from twilio.rest import Client
-
 from app.config import settings
 
-logger = logging.getLogger(__name__)
+client = Client(
+    settings.twilio_account_sid,
+    settings.twilio_auth_token,
+)
 
-_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-_FROM = settings.TWILIO_WHATSAPP_FROM
-
-
-def _to_wa(number: str) -> str:
-    """Ensure number is in whatsapp:+234... format."""
-    if not number.startswith("whatsapp:"):
-        return f"whatsapp:{number}"
-    return number
+FROM = settings.twilio_whatsapp_from
 
 
-async def send_text(to: str, body: str) -> str:
-    """Send a plain text WhatsApp message. Returns Twilio message SID."""
-    msg = _client.messages.create(
-        from_=_FROM,
-        to=_to_wa(to),
-        body=body,
+async def send_text(to: str, message: str):
+    """Send a plain text WhatsApp message."""
+    client.messages.create(
+        from_=FROM,
+        to=f"whatsapp:{to}",
+        body=message,
     )
-    logger.info("Text sent | to=%s | sid=%s", to, msg.sid)
-    return msg.sid
 
 
-async def send_audio(to: str, audio_url: str, caption: str = "") -> str:
-    """Send a voice note (audio file at public URL) as WhatsApp media."""
-    msg = _client.messages.create(
-        from_=_FROM,
-        to=_to_wa(to),
-        body=caption,
+async def send_buttons(to: str, body: str, buttons: list[str]):
+    """
+    Send interactive buttons.
+    Sandbox fallback: buttons rendered as a numbered list
+    since Twilio sandbox doesn't support interactive buttons.
+    """
+    numbered = "\n".join(
+        [f"{i+1}. {b}" for i, b in enumerate(buttons)]
+    )
+    await send_text(to, f"{body}\n\n{numbered}\n\nReply with the number.")
+
+
+async def send_cta_button(
+    to: str, body: str, button_label: str, url: str
+):
+    """Send a CTA button with a link (for Mono Connect etc)."""
+    await send_text(to, f"{body}\n\n👉 {button_label}:\n{url}")
+
+
+async def send_voice_note(to: str, audio_url: str):
+    """Send a voice note (audio file at public URL)."""
+    client.messages.create(
+        from_=FROM,
+        to=f"whatsapp:{to}",
         media_url=[audio_url],
     )
-    logger.info("Audio sent | to=%s | sid=%s", to, msg.sid)
-    return msg.sid
 
 
-async def send_buttons(to: str, body: str, buttons: list[dict]) -> str:
-    """
-    Send interactive button message.
-    buttons: [{"id": "yes", "title": "Yes"}, ...]
-    Note: Twilio WhatsApp interactive messages require approved templates in production.
-    """
-    # For sandbox/hackathon: fall back to numbered text menu
-    menu = body + "\n\n"
-    for i, btn in enumerate(buttons, 1):
-        menu += f"{i}. {btn['title']}\n"
-    menu += "\nReply with the number of your choice."
-    return await send_text(to, menu)
+async def send_media(to: str, media_url: str, caption: str = ""):
+    """Send an image or document with optional caption."""
+    client.messages.create(
+        from_=FROM,
+        to=f"whatsapp:{to}",
+        media_url=[media_url],
+        body=caption,
+    )

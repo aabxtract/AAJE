@@ -1,14 +1,6 @@
-"""Payment agent — handles supplier payments and invoice requests."""
-import logging
+async def handle_payment(whatsapp_no: str, message: str, session: dict):
+    from app.services.twilio_client import send_text
+    await send_text(whatsapp_no, "Payment features will be available soon.")
 
-from app.services import notifier
-
-logger = logging.getLogger(__name__)
-
-
-async def handle(wa_number: str, body: str, session: dict) -> None:
-    # TODO: supplier lookup, payment execution, invoice generation
-    await notifier.send(
-        wa_number,
-        "🧾 Who are you paying and how much?\nExample: *Pay Mama Ngozi ₦5,000*",
-    )
+async def execute_payment(whatsapp_no: str, session: dict, db):
+    pass

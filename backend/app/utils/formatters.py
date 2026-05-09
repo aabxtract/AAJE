@@ -1,26 +1,31 @@
-"""
-Formatters — shared display helpers for WhatsApp messages.
-"""
+from difflib import SequenceMatcher
 
+def names_match(trader_input: str, bank_name: str) -> bool:
+    a = trader_input.upper().strip()
+    b = bank_name.upper().strip()
 
-def fmt_currency(amount: float) -> str:
-    """Format a float as Nigerian Naira. Example: 18000.0 → ₦18,000.00"""
+    # Exact match
+    if a == b:
+        return True
+
+    # All words in input exist in bank name
+    a_words = set(a.split())
+    b_words = set(b.split())
+    if a_words.issubset(b_words):
+        return True
+
+    # Fuzzy match — handles typos
+    ratio = SequenceMatcher(None, a, b).ratio()
+    if ratio >= 0.85:
+        return True
+
+    return False
+
+def format_naira(amount: float) -> str:
     return f"₦{amount:,.2f}"
 
-
-def fmt_percent(value: float) -> str:
-    """Format as percentage. Example: 0.6 → 60%"""
-    return f"{value * 100:.0f}%"
-
-
-def fmt_score(score: float) -> str:
-    """Format trader score with label."""
-    if score >= 80:
-        label = "Excellent 🌟"
-    elif score >= 60:
-        label = "Good 👍"
-    elif score >= 40:
-        label = "Building 📈"
-    else:
-        label = "Just Starting 🌱"
-    return f"{score:.1f}/100 — {label}"
+def split_full_name(full_name: str) -> tuple[str, str]:
+    parts = full_name.strip().split()
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])

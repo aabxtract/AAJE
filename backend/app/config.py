@@ -1,45 +1,46 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
-
-    # Server
-    APP_ENV: str = "development"
-    SECRET_KEY: str
-    ADMIN_TOKEN: str
+    app_env: str = "development"
+    secret_key: str
+    admin_token: str
+    is_sandbox: bool = True
 
     # Twilio
-    TWILIO_ACCOUNT_SID: str
-    TWILIO_AUTH_TOKEN: str
-    TWILIO_WHATSAPP_FROM: str = "whatsapp:+14155238886"
+    twilio_account_sid: str
+    twilio_auth_token: str
+    twilio_whatsapp_from: str
 
     # Mono
-    MONO_PUBLIC_KEY: str
-    MONO_SECRET_KEY: str
-    MONO_WEBHOOK_SECRET: str
-    MONO_BASE_URL: str = "https://sandbox.mono.co"
+    mono_public_key: str
+    mono_secret_key: str
+    mono_webhook_secret: str
+    mono_base_url: str = "https://api.withmono.com"
 
     # Squad
-    SQUAD_SECRET_KEY: str
-    SQUAD_BASE_URL: str = "https://sandbox-api-d.squadco.com"
-    SQUAD_REVENUE_ACCOUNT: str
+    squad_secret_key: str
+    squad_base_url: str = "https://sandbox-api-d.squadco.com"
+    squad_revenue_account: str
 
     # Supabase
-    SUPABASE_URL: str
-    SUPABASE_KEY: str
-    DATABASE_URL: str  # asyncpg DSN
+    supabase_url: str
+    supabase_key: str
+    database_url: str
 
     # Upstash Redis
-    UPSTASH_REDIS_REST_URL: str
-    UPSTASH_REDIS_REST_TOKEN: str
+    upstash_redis_rest_url: str
+    upstash_redis_rest_token: str
 
     # Groq
-    GROQ_API_KEY: str
+    groq_api_key: str
 
     # YarnGPT
-    YARNGPT_API_URL: str
-    YARNGPT_API_KEY: str
+    yarngpt_api_url: str
+    yarngpt_api_key: str
+
+    class Config:
+        env_file = ".env"
 
 
 settings = Settings()

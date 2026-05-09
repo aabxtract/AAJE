@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AAJE Admin — Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="../assets/style.css" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="logo">AAJE Admin</div>
+    <a href="../index.html">📊 Overview</a>
+    <a href="users.html">👥 Traders</a>
+    <a href="transactions.html">💳 Transactions</a>
+    <a href="escalations.html">🔒 Escalations</a>
+    <a href="analytics.html" class="active">📈 Analytics</a>
+  </nav>
+  <main class="content">
+    <h1>Analytics</h1>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:24px;">
+      <div>
+        <h2 style="font-size:16px;margin-bottom:16px;color:#718096">Trader Score Distribution</h2>
+        <canvas id="score-chart"></canvas>
+      </div>
+      <div>
+        <h2 style="font-size:16px;margin-bottom:16px;color:#718096">Vault Balances</h2>
+        <canvas id="vault-chart"></canvas>
+      </div>
+    </div>
+  </main>
+  <script>
+    const chartDefaults = {
+      plugins: { legend: { labels: { color: "#e2e8f0" } } },
+      scales: {
+        x: { ticks: { color: "#718096" }, grid: { color: "#2d3748" } },
+        y: { ticks: { color: "#718096" }, grid: { color: "#2d3748" } },
+      },
+    };
+
+    new Chart(document.getElementById("score-chart"), {
+      type: "bar",
+      data: {
+        labels: ["0-20", "21-40", "41-60", "61-80", "81-100"],
+        datasets: [{ label: "Traders", data: [0,0,0,0,0], backgroundColor: "rgba(108,99,255,0.5)", borderColor: "#6c63ff", borderWidth: 2, borderRadius: 6 }],
+      },
+      options: { responsive: true, ...chartDefaults },
+    });
+
+    new Chart(document.getElementById("vault-chart"), {
+      type: "doughnut",
+      data: {
+        labels: ["Operations", "Savings", "Emergency"],
+        datasets: [{ data: [60, 20, 20], backgroundColor: ["#6c63ff","#48bb78","#fc8181"] }],
+      },
+      options: { responsive: true, plugins: { legend: { labels: { color: "#e2e8f0" } } } },
+    });
+  </script>
+</body>
+</html>

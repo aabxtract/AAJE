@@ -1,28 +1,28 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from app.routes.webhook import router as webhook_router
+from app.routes.mono_webhook import router as mono_router
+from app.routes.admin import router as admin_router
+from scheduler import start_scheduler
 
-from app.config import settings
-from app.routes import webhook, mono_webhook, admin
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_scheduler()
+    yield
+
 
 app = FastAPI(
-    title="AAJE API",
-    description="Financial operating system for Nigerian informal traders",
-    version="0.1.0",
+    title="AAJE - Digital Business Manager",
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(webhook.router, prefix="/webhook", tags=["Twilio Webhook"])
-app.include_router(mono_webhook.router, prefix="/mono", tags=["Mono Webhook"])
-app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(webhook_router, prefix="/webhook")
+app.include_router(mono_router, prefix="/webhook")
+app.include_router(admin_router, prefix="/admin")
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "env": settings.APP_ENV}
+    return {"status": "AAJE is live", "env": "sandbox"}

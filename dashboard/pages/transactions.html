@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AAJE Admin — Transactions</title>
+  <link rel="stylesheet" href="../assets/style.css" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="logo">AAJE Admin</div>
+    <a href="../index.html">📊 Overview</a>
+    <a href="users.html">👥 Traders</a>
+    <a href="transactions.html" class="active">💳 Transactions</a>
+    <a href="escalations.html">🔒 Escalations</a>
+    <a href="analytics.html">📈 Analytics</a>
+  </nav>
+  <main class="content">
+    <h1>Transactions</h1>
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Trader</th><th>Type</th><th>Amount</th><th>Category</th><th>Source</th></tr>
+      </thead>
+      <tbody id="txns-tbody">
+        <tr><td colspan="6" style="color:#718096">Loading...</td></tr>
+      </tbody>
+    </table>
+  </main>
+  <script>
+    const API_BASE = "http://localhost:8000";
+    const headers = { "Authorization": `Bearer ${localStorage.getItem("aaje_admin_token")}` };
+    fetch(`${API_BASE}/admin/transactions`, { headers })
+      .then(r => r.json())
+      .then(data => {
+        const tbody = document.getElementById("txns-tbody");
+        tbody.innerHTML = data.transactions.length
+          ? data.transactions.map(t => `
+              <tr>
+                <td>${t.recorded_at?.slice(0,10)}</td>
+                <td>${t.trader_id}</td>
+                <td><span class="badge ${t.type==='CREDIT'?'success':'danger'}">${t.type}</span></td>
+                <td>₦${Number(t.amount).toLocaleString()}</td>
+                <td>${t.category ?? '—'}</td>
+                <td>${t.source}</td>
+              </tr>`).join("")
+          : "<tr><td colspan='6' style='color:#718096'>No transactions yet.</td></tr>";
+      });
+  </script>
+</body>
+</html>
