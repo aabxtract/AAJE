@@ -8,6 +8,11 @@ from scheduler import start_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Create all tables if they don't exist
+    from app.database import engine, Base
+    import app.models  # noqa: F401 — registers all models with Base.metadata
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     start_scheduler()
     yield
 

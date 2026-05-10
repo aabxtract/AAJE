@@ -1,9 +1,8 @@
 import uuid
-from datetime import datetime
 from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
 from app.database import Base
-
 
 class Withdrawal(Base):
     __tablename__ = "withdrawals"
@@ -15,5 +14,5 @@ class Withdrawal(Base):
     destination_account = Column(String(20))
     squad_transfer_ref = Column(String(100))
     status = Column(String(20), default="pending")
-    initiated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    completed_at = Column(DateTime(timezone=True))
+    initiated_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)

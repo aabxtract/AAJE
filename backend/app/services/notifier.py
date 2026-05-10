@@ -1,34 +1,63 @@
 """
 Notifier — outbound message orchestrator.
 
-Combines twilio_client + yarngpt to deliver either:
-  - Text-only message
-  - Text + voice note (translated via YarnGPT)
-
-Decides based on trader language preference stored in session/DB.
+Strict Pipeline Order:
+1. PII Scrubber (scrub raw context)
+2. Refinery Math (process scrubbed context)
+3. LLM Generate Insight (English)
+4. LLM Translate (to target language)
+5. Twilio (send text only)
 """
 import logging
-
-from app.services import twilio_client, yarngpt
+from app.services import twilio_client, llm
+from app.utils import pii_scrubber
 
 logger = logging.getLogger(__name__)
 
-
-async def send(
-    wa_number: str,
-    text: str,
-    language: str = "english",
-    voice: bool = False,
-) -> None:
+async def send_daily_debrief(user, db) -> None:
     """
-    Send a message to a trader.
-    If voice=True and language is not English, also send a YarnGPT voice note.
+    Follows strict pipeline for daily debrief notification.
     """
-    await twilio_client.send_text(wa_number, text)
+    from app.services.slicer import get_daily_raw_context, calculate_refinery_signals
+    
+    # Fetch raw data
+    raw_context = await get_daily_raw_context(user, db)
+    
+    # 1. Scrub PII
+    scrubbed_context = pii_scrubber.scrub(raw_context)
+    
+    # 2. Refinery Math
+    signals = calculate_refinery_signals(scrubbed_context)
+    
+    # 3. LLM Insight (English)
+    english_insight = await llm.generate_insight(signals)
+    
+    # 4. LLM Translate
+    localized_text = await llm.translate_to_language(english_insight, user.preferred_language)
+    
+    # 5. Send Text
+    await twilio_client.send_text(user.whatsapp_no, localized_text)
 
-    if voice and language in yarngpt.SUPPORTED_LANGUAGES:
-        audio_url = await yarngpt.synthesize_and_upload(text, language)
-        if audio_url:
-            await twilio_client.send_audio(wa_number, audio_url)
-        else:
-            logger.warning("Voice note generation failed for %s, text-only sent", wa_number)
+async def notify_split(user, db, transaction_id: str) -> None:
+    """
+    Follows strict pipeline for notifying a user after a vault split.
+    """
+    from app.services.slicer import get_split_raw_context, calculate_refinery_signals
+    
+    # Fetch raw data
+    raw_context = await get_split_raw_context(user, db, transaction_id)
+    
+    # 1. Scrub PII
+    scrubbed_context = pii_scrubber.scrub(raw_context)
+    
+    # 2. Refinery Math
+    signals = calculate_refinery_signals(scrubbed_context)
+    
+    # 3. LLM Insight (English)
+    english_insight = await llm.generate_insight(signals)
+    
+    # 4. LLM Translate
+    localized_text = await llm.translate_to_language(english_insight, user.preferred_language)
+    
+    # 5. Send Text
+    await twilio_client.send_text(user.whatsapp_no, localized_text)

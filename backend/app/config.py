@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     secret_key: str
     admin_token: str
+    intelligence_api_key: str
     is_sandbox: bool = True
 
     # Twilio
@@ -22,6 +23,7 @@ class Settings(BaseSettings):
     squad_secret_key: str
     squad_base_url: str = "https://sandbox-api-d.squadco.com"
     squad_revenue_account: str
+    squad_revenue_bank_code: str
 
     # Supabase
     supabase_url: str
@@ -35,12 +37,9 @@ class Settings(BaseSettings):
     # Groq
     groq_api_key: str
 
-    # YarnGPT
-    yarngpt_api_url: str
-    yarngpt_api_key: str
-
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()

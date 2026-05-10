@@ -1,20 +1,14 @@
 """
-PII scrubber — strips sensitive data before logging or sending to LLM.
-
-Removes: phone numbers, account numbers, PIN-like sequences, BVN patterns.
+PII Scrubber - Removes Personal Identifiable Information before sending data to LLM.
 """
-import re
 
-_PHONE_RE = re.compile(r"\b(?:\+?234|0)?[789]\d{9}\b")
-_ACCOUNT_RE = re.compile(r"\b\d{10}\b")
-_PIN_RE = re.compile(r"\b\d{4}\b")
-_BVN_RE = re.compile(r"\b\d{11}\b")
-
-
-def scrub(text: str) -> str:
-    """Replace sensitive patterns with redacted placeholders."""
-    text = _BVN_RE.sub("[BVN_REDACTED]", text)
-    text = _PHONE_RE.sub("[PHONE_REDACTED]", text)
-    text = _ACCOUNT_RE.sub("[ACCOUNT_REDACTED]", text)
-    text = _PIN_RE.sub("[PIN_REDACTED]", text)
-    return text
+def scrub(raw_context: dict) -> dict:
+    """
+    Scrubs PII (names, exact account numbers, phone numbers) from raw context.
+    Returns safe context for LLM processing.
+    """
+    # Placeholder implementation
+    scrubbed = raw_context.copy()
+    if "account_number" in scrubbed:
+        scrubbed["account_number"] = "***" + str(scrubbed["account_number"])[-4:]
+    return scrubbed

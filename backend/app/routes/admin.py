@@ -12,7 +12,7 @@ _bearer = HTTPBearer()
 
 
 def _require_admin(credentials: HTTPAuthorizationCredentials = Security(_bearer)):
-    if credentials.credentials != settings.ADMIN_TOKEN:
+    if credentials.credentials != settings.admin_token:
         raise HTTPException(status_code=403, detail="Invalid admin token")
     return True
 
