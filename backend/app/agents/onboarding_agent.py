@@ -59,6 +59,9 @@ async def handle_onboarding(
     elif stage == "COLLECTING_HUSTLE_NAMES":
         await _handle_hustle_names(whatsapp_no, message, session)
 
+    elif stage == "PITCHING_MODULES":
+        await _handle_pitching_modules(whatsapp_no, message, session)
+
     elif stage == "COLLECTING_ACCOUNT":
         await _handle_account_number(whatsapp_no, message, session)
 
@@ -212,13 +215,9 @@ async def _handle_hustle_count(
         # Single stream: use business type as name
         btype_name = session["pending_data"].get("business_type", "Main Business").replace("_", " ").title()
         session["pending_data"]["hustle_names"] = [btype_name]
-        session["stage"] = "COLLECTING_ACCOUNT"
+        session["stage"] = "PITCHING_MODULES"
         await save_session(whatsapp_no, session)
-        await send_text(
-            whatsapp_no,
-            "Enter your POS account number\n"
-            "(the account where customers send money to you):"
-        )
+        await _send_module_pitch(whatsapp_no)
 
 async def _handle_hustle_names(
     whatsapp_no: str, message: str, session: dict
@@ -232,13 +231,38 @@ async def _handle_hustle_names(
         session["pending_data"] = {}
         
     session["pending_data"]["hustle_names"] = names
-    session["stage"] = "COLLECTING_ACCOUNT"
+    session["stage"] = "PITCHING_MODULES"
     await save_session(whatsapp_no, session)
+    await _send_module_pitch(whatsapp_no)
+
+async def _send_module_pitch(whatsapp_no: str):
     await send_text(
         whatsapp_no,
-        "Enter your POS account number\n"
-        "(the account where customers send money to you):"
+        "Now, choose how you want AAJE to work for you:\n\n"
+        "1️⃣ *Hustle-Manager* (₦1,000/month)\n"
+        "Keep your current bank. I will watch your account, send daily reports, and build your Trust Score.\n\n"
+        "2️⃣ *AAJE Pro* (Free)\n"
+        "Get a Squad business account. I will manage your money automatically, split it into vaults, and earn you interest. I earn only when you transact.\n\n"
+        "Reply with 1 or 2 to choose."
     )
+
+async def _handle_pitching_modules(whatsapp_no: str, message: str, session: dict):
+    choice = message.strip()
+    if choice not in ["1", "2"]:
+        await send_text(whatsapp_no, "Please reply with 1 or 2.")
+        return
+        
+    tier = "module_1" if choice == "1" else "module_2"
+    session["pending_data"]["tier"] = tier
+    
+    session["stage"] = "COLLECTING_ACCOUNT"
+    await save_session(whatsapp_no, session)
+    
+    acct_msg = "Enter your POS account number\n(the account where customers send money to you):"
+    if tier == "module_2":
+        acct_msg = "Enter your current bank account number\n(This is where you will withdraw your money to):"
+        
+    await send_text(whatsapp_no, acct_msg)
 
 async def _handle_account_number(
     whatsapp_no: str, message: str, session: dict
@@ -381,22 +405,31 @@ async def _handle_pin_confirmation(
     stored_hash = session["pending_data"].get("pin_hash")
 
     if verify_pin(pin, stored_hash):
-        session["stage"] = "AWAITING_MONO_CALLBACK"
-        user_id = str(uuid.uuid4())
-        session["pending_data"]["user_id"] = user_id
-        await save_session(whatsapp_no, session)
-        await set_mono_pending(whatsapp_no)
-
-        connect_url = await generate_connect_url(user_id)
-        await send_cta_button(
-            whatsapp_no,
-            "✅ PIN set!\n\n"
-            "Now let's connect your bank account so I can "
-            "watch your transactions automatically.\n"
-            "This takes about 2 minutes:",
-            "Connect My Bank",
-            connect_url
-        )
+        tier = session["pending_data"].get("tier", "module_2")
+        
+        if tier == "module_1":
+            session["stage"] = "AWAITING_MONO_CALLBACK"
+            user_id = str(uuid.uuid4())
+            session["pending_data"]["user_id"] = user_id
+            await save_session(whatsapp_no, session)
+            await set_mono_pending(whatsapp_no)
+    
+            connect_url = await generate_connect_url(user_id)
+            await send_cta_button(
+                whatsapp_no,
+                "✅ PIN set!\n\n"
+                "Since you chose Hustle-Manager, let's connect your bank account so I can "
+                "watch your transactions automatically.\n"
+                "This takes about 2 minutes:",
+                "Connect My Bank",
+                connect_url
+            )
+        else:
+            # Module 2 -> Squad Vaults
+            session["stage"] = "SETTING_UP_VAULTS"
+            await save_session(whatsapp_no, session)
+            from app.agents.vault_agent import handle_vault_setup
+            await handle_vault_setup(whatsapp_no, message, session)
     else:
         session["stage"] = "CREATING_PIN"
         session["pending_data"].pop("pin_hash", None)
@@ -424,17 +457,30 @@ async def _handle_debrief_time(
     session["stage"] = "POLICY_ACCEPTANCE"
     await save_session(whatsapp_no, session)
 
-    await send_buttons(
-        whatsapp_no,
-        "📋 Almost done! Here's what you're agreeing to:\n\n"
-        "✅ AAJE watches your linked account automatically\n"
-        "✅ ₦5 is charged per automatic vault split\n"
-        "✅ Withdrawals only go to your verified account\n"
-        "✅ Your data is never sold to third parties\n"
-        "✅ You can close your account anytime\n\n"
-        "Do you accept?",
-        ["I Accept", "Cancel"]
-    )
+    tier = session.get("pending_data", {}).get("tier", "module_2")
+    
+    if tier == "module_1":
+        await send_buttons(
+            whatsapp_no,
+            "📋 Almost done! Here's what you're agreeing to:\n\n"
+            "✅ AAJE watches your linked account automatically\n"
+            "✅ You will be charged ₦1,000 per month for this service\n"
+            "✅ Your data is never sold to third parties\n"
+            "✅ You can cancel anytime\n\n"
+            "Do you accept?",
+            ["I Accept", "Cancel"]
+        )
+    else:
+        await send_buttons(
+            whatsapp_no,
+            "📋 Almost done! Here's what you're agreeing to:\n\n"
+            "✅ AAJE creates Squad Virtual Accounts for your business\n"
+            "✅ Withdrawals only go to your verified account\n"
+            "✅ Your data is never sold to third parties\n"
+            "✅ You can close your account anytime\n\n"
+            "Do you accept?",
+            ["I Accept", "Cancel"]
+        )
 
 async def _handle_policy_acceptance(
     whatsapp_no: str, message: str, session: dict
@@ -469,6 +515,8 @@ async def _handle_policy_acceptance(
                 verified_bank_name=data.get("verified_bank_name", ""),
                 mono_account_id=data.get("mono_account_id"),
                 squad_customer_id=data.get("squad_customer_id"),
+                tier=data.get("tier", "module_2"),
+                subscription_status="active" if data.get("tier") == "module_1" else "inactive",
                 daily_debrief_time=data.get("daily_debrief_time", "20:00:00"),
                 onboarding_complete=True,
                 policies_accepted_at=func.now()
@@ -484,6 +532,7 @@ async def _handle_policy_acceptance(
                 "user_id": user_id,
                 "stream_name": stream_name,
                 "stream_type": data.get("business_type", ""),
+                "stream_source": "mono" if data.get("tier") == "module_1" else "squad",
                 "squad_virtual_accounts": squad_accounts,
                 "slice_config": slice_config,
                 "is_primary": (i == 0)
@@ -500,13 +549,21 @@ async def _handle_policy_acceptance(
     await save_session(whatsapp_no, session)
 
     debrief_time = data.get("daily_debrief_time", "20:00:00")[:5]
-    await send_text(
-        whatsapp_no,
-        f"🎉 Welcome to AAJE, {first_name}!\n\n"
-        f"I am now watching your account. "
-        f"Every time money comes in, I will split it "
-        f"into your vaults automatically.\n\n"
-        f"You will get your first daily report at "
-        f"{debrief_time}.\n\n"
-        f"Just trade — I will handle the rest. 💪"
-    )
+    
+    if data.get("tier") == "module_1":
+        await send_text(
+            whatsapp_no,
+            f"🎉 Welcome to AAJE Hustle-Manager, {first_name}!\n\n"
+            f"I am now watching your Mono account. "
+            f"I will categorize your transactions and calculate your Trust Score.\n\n"
+            f"You will get your first daily report at {debrief_time}."
+        )
+    else:
+        await send_text(
+            whatsapp_no,
+            f"🎉 Welcome to AAJE Pro, {first_name}!\n\n"
+            f"I have created your Squad Virtual Accounts. "
+            f"Every time money comes in, I will split it into your vaults automatically.\n\n"
+            f"You will get your first daily report at {debrief_time}.\n\n"
+            f"Just trade — I will handle the rest. 💪"
+        )

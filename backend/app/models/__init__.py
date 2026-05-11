@@ -12,6 +12,8 @@ from app.models.institutional_key import InstitutionalKey
 from app.models.stream_analytics import StreamAnalytics
 from app.models.data_consent import DataConsent
 from app.models.api_query_log import ApiQueryLog
+from app.models.subscription import Subscription
+from app.models.nudge_log import NudgeLog
 
 __all__ = [
     "User",
@@ -27,5 +29,7 @@ __all__ = [
     "InstitutionalKey",
     "StreamAnalytics",
     "DataConsent",
-    "ApiQueryLog"
+    "ApiQueryLog",
+    "Subscription",
+    "NudgeLog"
 ]

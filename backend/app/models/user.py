@@ -18,8 +18,15 @@ class User(Base):
     mono_account_id = Column(String(100))
     verified_bank_account = Column(String(20))
     verified_bank_code = Column(String(10))
-    verified_bank_name = Column(String(100))
-    squad_customer_id = Column(String(100))
+    # Module/Tier fields
+    tier = Column(String(20), default="module_2") # module_1 or module_2
+    subscription_status = Column(String(20), default="inactive") # active, suspended, cancelled
+    subscription_start_date = Column(DateTime(timezone=True))
+    last_payment_date = Column(DateTime(timezone=True))
+    next_payment_date = Column(DateTime(timezone=True))
+    subscription_amount = Column(Numeric(10, 2), default=1000.00)
+    migration_eligible = Column(Boolean, default=False)
+    
     daily_debrief_time = Column(Time)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     onboarding_stage = Column(String(30), default="NEW")

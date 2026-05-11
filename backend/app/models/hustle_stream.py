@@ -11,6 +11,7 @@ class HustleStream(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
     stream_name = Column(String(100), nullable=False)
     stream_type = Column(String(50))
+    stream_source = Column(String(20), default="squad") # mono or squad
     squad_virtual_accounts = Column(JSON, default=dict)
     slice_config = Column(JSON, default=dict)
     is_primary = Column(Boolean, default=False)

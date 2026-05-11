@@ -20,6 +20,7 @@ class EconomicIdentity(Base):
     revenue_trend = Column(String(10))
     active_stream_count = Column(Integer)
     combined_credit_grade = Column(String(5))
+    data_quality_score = Column(String(20)) # verified or standard
     recommended_loan_ceiling = Column(Numeric(14, 2))
     passport_data = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
