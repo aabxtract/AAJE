@@ -13,7 +13,7 @@ def _apply_rules(user, transaction: dict, slice_config: dict) -> dict:
 
 async def execute_split(user, transaction: dict, stream_id: str, db):
     """
-    Auto-splits incoming credit into the stream's vaults and collects the automation fee.
+    Auto-splits incoming credit into the stream's vaults.
     """
     from sqlalchemy import select
     from app.models.hustle_stream import HustleStream
@@ -29,9 +29,7 @@ async def execute_split(user, transaction: dict, stream_id: str, db):
     if amount_kobo <= 0:
         return
         
-    # Subtract 5 naira fee (500 kobo)
-    fee_kobo = 500
-    amount_to_split = amount_kobo - fee_kobo
+    amount_to_split = amount_kobo
     
     if amount_to_split <= 0:
         return
@@ -67,27 +65,6 @@ async def execute_split(user, transaction: dict, stream_id: str, db):
             )
             db.add(movement)
             
-    # Transfer 5 naira fee to AAJE revenue account
-    fee_ref = f"fee_{transaction['id']}"
-    await transfer(
-        settings.squad_revenue_account, 
-        settings.squad_revenue_bank_code, 
-        fee_kobo, 
-        "AAJE Automation Fee", 
-        fee_ref
-    )
-    
-    fee_movement = VaultMovement(
-        user_id=user.id,
-        stream_id=stream_id,
-        source_transaction_id=transaction["id"],
-        vault_name="AAJE Fee",
-        amount=5.00,
-        direction="out",
-        squad_transfer_ref=fee_ref,
-        fee_charged=5.00
-    )
-    db.add(fee_movement)
     await db.commit()
     
     # Notify trader
