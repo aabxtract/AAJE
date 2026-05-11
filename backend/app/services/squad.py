@@ -1,5 +1,10 @@
+import logging
+
 import httpx
+
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 BASE = settings.squad_base_url
 HEADERS = {
@@ -28,6 +33,15 @@ async def register_customer(
         )
         response.raise_for_status()
         return response.json().get("data", {})
+
+
+def extract_webhook_signature(headers: dict) -> str:
+    return (
+        headers.get("x-squad-signature")
+        or headers.get("squad-signature")
+        or headers.get("x-signature")
+        or ""
+    )
 
 async def create_virtual_account(
     customer_id: str,

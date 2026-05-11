@@ -1,569 +1,286 @@
-from app.redis import save_session, set_mono_pending
-from app.services.twilio_client import (
-    send_text, send_buttons, send_cta_button
-)
-from app.services.mono import lookup_account, generate_connect_url
-from app.services.squad import register_customer
-from app.services.pin import hash_pin, is_valid_pin
-from app.utils.formatters import names_match, split_full_name
-from app.database import AsyncSessionLocal
-from sqlalchemy import insert
-from app.models.user import User
 import uuid
 
-BANK_CODES = {
-    "gtbank": "058", "gtb": "058",
-    "access": "044", "access bank": "044",
-    "zenith": "057", "zenith bank": "057",
-    "first bank": "011", "firstbank": "011",
-    "uba": "033", "union bank": "032",
-    "fidelity": "070", "sterling": "232",
-    "wema": "035", "kuda": "090267",
-    "opay": "100004", "palmpay": "100033",
-    "moniepoint": "090405"
-}
+from sqlalchemy import insert
+
+from app.database import AsyncSessionLocal
+from app.models.income_stream import IncomeStream
+from app.models.score import Score
+from app.models.user import User
+from app.models.vault import Vault
+from app.redis import save_session
+from app.services.mono import BANK_CODES, lookup_account
+from app.services.pin import hash_pin, is_valid_pin, verify_pin
+from app.services.squad import create_virtual_account, register_customer
+from app.services.whatsapp_client import send_text
+from app.utils.formatters import names_match, split_full_name
 
 LANGUAGE_MAP = {
     "1": "yo", "yoruba": "yo",
     "2": "ig", "igbo": "ig",
     "3": "ha", "hausa": "ha",
     "4": "pcm", "pidgin": "pcm",
-    "5": "en", "english": "en"
+    "5": "en", "english": "en",
 }
 
-async def handle_onboarding(
-    whatsapp_no: str,
-    message: str,
-    session: dict
-):
+BUSINESS_TYPES = {
+    "1": "Market Trader", "market trader": "Market Trader",
+    "2": "Food Vendor", "food vendor": "Food Vendor",
+    "3": "Shop Owner", "shop owner": "Shop Owner",
+    "4": "Artisan", "artisan": "Artisan",
+    "5": "Other", "other": "Other",
+}
+
+
+async def handle_onboarding(whatsapp_no: str, message: str, session: dict):
     stage = session.get("stage", "NEW")
+    session.setdefault("pending_data", {})
 
-    if stage == "NEW":
-        await _stage_language(whatsapp_no, session)
+    handlers = {
+        "NEW": _new,
+        "SELECTING_LANGUAGE": _language,
+        "COLLECTING_NAME": _name,
+        "COLLECTING_LOCATION": _location,
+        "COLLECTING_BUSINESS_TYPE": _business_type,
+        "COLLECTING_STREAM_COUNT": _stream_count,
+        "COLLECTING_STREAM_NAMES": _stream_names,
+        "COLLECTING_ACCOUNT": _account,
+        "COLLECTING_BANK": _bank,
+        "CREATING_PIN": _create_pin,
+        "CONFIRMING_PIN": _confirm_pin,
+        "CREATING_ACCOUNTS": _creating_accounts,
+        "CONFIGURING_SPLITS": _configuring_splits,
+        "POLICY_ACCEPTANCE": _policy_acceptance,
+    }
+    await handlers.get(stage, _new)(whatsapp_no, message, session)
 
-    elif stage == "SELECTING_LANGUAGE":
-        await _handle_language(whatsapp_no, message, session)
 
-    elif stage == "COLLECTING_NAME":
-        await _handle_name(whatsapp_no, message, session)
-
-    elif stage == "COLLECTING_LOCATION":
-        await _handle_location(whatsapp_no, message, session)
-
-    elif stage == "COLLECTING_BUSINESS_TYPE":
-        await _handle_business_type(whatsapp_no, message, session)
-
-    elif stage == "COLLECTING_HUSTLE_COUNT":
-        await _handle_hustle_count(whatsapp_no, message, session)
-
-    elif stage == "COLLECTING_HUSTLE_NAMES":
-        await _handle_hustle_names(whatsapp_no, message, session)
-
-    elif stage == "PITCHING_MODULES":
-        await _handle_pitching_modules(whatsapp_no, message, session)
-
-    elif stage == "COLLECTING_ACCOUNT":
-        await _handle_account_number(whatsapp_no, message, session)
-
-    elif stage == "COLLECTING_BANK":
-        await _handle_bank_name(whatsapp_no, message, session)
-
-    elif stage == "VERIFYING_IDENTITY":
-        await _handle_identity_confirmation(
-            whatsapp_no, message, session
-        )
-
-    elif stage == "CREATING_PIN":
-        await _handle_pin_creation(whatsapp_no, message, session)
-
-    elif stage == "CONFIRMING_PIN":
-        await _handle_pin_confirmation(whatsapp_no, message, session)
-
-    elif stage == "AWAITING_MONO_CALLBACK":
-        await send_text(
-            whatsapp_no,
-            "⏳ Still waiting for your bank connection. "
-            "Please complete it in your browser."
-        )
-
-    elif stage == "SETTING_UP_VAULTS":
-        from app.agents.vault_agent import handle_vault_setup
-        await handle_vault_setup(whatsapp_no, message, session)
-
-    elif stage == "CONFIGURING_SLICES":
-        from app.agents.vault_agent import handle_slice_config
-        await handle_slice_config(whatsapp_no, message, session)
-
-    elif stage == "SETTING_DEBRIEF_TIME":
-        await _handle_debrief_time(whatsapp_no, message, session)
-
-    elif stage == "POLICY_ACCEPTANCE":
-        await _handle_policy_acceptance(whatsapp_no, message, session)
-
-# ── Stage handlers ──────────────────────────────────────────
-
-async def _stage_language(whatsapp_no: str, session: dict):
+async def _new(whatsapp_no: str, _message: str, session: dict):
     session["stage"] = "SELECTING_LANGUAGE"
     await save_session(whatsapp_no, session)
-    await send_buttons(
-        whatsapp_no,
-        "👋 Welcome to AAJE — your Digital Business Manager.\n\n"
-        "I will help you manage your money, track your sales, "
-        "and grow your business.\n\n"
-        "Choose your language:",
-        ["Yoruba", "Igbo", "Hausa", "Pidgin", "English"]
-    )
+    await send_text(whatsapp_no, "Welcome to AAJE. Choose your language:\n1. Yoruba\n2. Igbo\n3. Hausa\n4. Pidgin\n5. English")
 
-async def _handle_language(
-    whatsapp_no: str, message: str, session: dict
-):
-    lang = LANGUAGE_MAP.get(message.lower().strip())
-    if not lang:
-        await send_text(
-            whatsapp_no,
-            "Please reply with a number:\n"
-            "1. Yoruba\n2. Igbo\n3. Hausa\n4. Pidgin\n5. English"
-        )
+
+async def _language(whatsapp_no: str, message: str, session: dict):
+    language = LANGUAGE_MAP.get(message.lower().strip())
+    if not language:
+        await send_text(whatsapp_no, "Please reply with 1, 2, 3, 4, or 5.")
         return
-
-    session["language"] = lang
+    session["language"] = language
     session["stage"] = "COLLECTING_NAME"
     await save_session(whatsapp_no, session)
     await send_text(whatsapp_no, "What is your full name?")
 
-async def _handle_name(
-    whatsapp_no: str, message: str, session: dict
-):
+
+async def _name(whatsapp_no: str, message: str, session: dict):
     if len(message.strip()) < 2:
         await send_text(whatsapp_no, "Please enter your full name.")
         return
-
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
     session["pending_data"]["full_name"] = message.strip()
     session["stage"] = "COLLECTING_LOCATION"
     await save_session(whatsapp_no, session)
-    await send_text(
-        whatsapp_no,
-        "What market or town do you trade in?"
-    )
+    await send_text(whatsapp_no, "What market or town do you trade in?")
 
-async def _handle_location(
-    whatsapp_no: str, message: str, session: dict
-):
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
+
+async def _location(whatsapp_no: str, message: str, session: dict):
     session["pending_data"]["location"] = message.strip()
     session["stage"] = "COLLECTING_BUSINESS_TYPE"
     await save_session(whatsapp_no, session)
-    await send_buttons(
-        whatsapp_no,
-        "What type of business do you run?",
-        ["Market Trader", "Food Vendor", "Shop Owner", "Other"]
-    )
+    await send_text(whatsapp_no, "What type of business do you run?\n1. Market Trader\n2. Food Vendor\n3. Shop Owner\n4. Artisan\n5. Other")
 
-async def _handle_business_type(
-    whatsapp_no: str, message: str, session: dict
-):
-    types = {
-        "1": "market_trader", "market trader": "market_trader",
-        "2": "food_vendor", "food vendor": "food_vendor",
-        "3": "shop_owner", "shop owner": "shop_owner",
-        "4": "other", "other": "other"
-    }
-    btype = types.get(message.lower().strip())
-    if not btype:
-        await send_text(
-            whatsapp_no,
-            "Please reply 1, 2, 3, or 4."
-        )
+
+async def _business_type(whatsapp_no: str, message: str, session: dict):
+    business_type = BUSINESS_TYPES.get(message.lower().strip())
+    if not business_type:
+        await send_text(whatsapp_no, "Please reply with 1, 2, 3, 4, or 5.")
         return
-
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
-    session["pending_data"]["business_type"] = btype
-    session["stage"] = "COLLECTING_HUSTLE_COUNT"
+    session["pending_data"]["business_type"] = business_type
+    session["stage"] = "COLLECTING_STREAM_COUNT"
     await save_session(whatsapp_no, session)
-    await send_buttons(
-        whatsapp_no,
-        "Do you run more than one business?",
-        ["Yes", "No"]
-    )
+    await send_text(whatsapp_no, "Do you run more than one business? Reply 1 for Yes, 2 for No.")
 
-async def _handle_hustle_count(
-    whatsapp_no: str, message: str, session: dict
-):
-    is_multi = message.lower().strip() in ["yes", "1"]
-    
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
-    session["pending_data"]["is_multi_hustle"] = is_multi
-    
-    if is_multi:
-        session["stage"] = "COLLECTING_HUSTLE_NAMES"
-        await save_session(whatsapp_no, session)
-        await send_text(
-            whatsapp_no,
-            "Great! Please enter a name for each of your businesses, separated by a comma.\n"
-            "Example: Adunola Provisions, Adunola Catering"
-        )
+
+async def _stream_count(whatsapp_no: str, message: str, session: dict):
+    choice = message.strip().lower()
+    if choice in {"1", "yes", "y"}:
+        session["pending_data"]["stream_count"] = 2
+        session["pending_data"]["streams"] = []
+        session["stage"] = "COLLECTING_STREAM_NAMES"
+        prompt = "Name your first business."
+    elif choice in {"2", "no", "n"}:
+        session["pending_data"]["stream_count"] = 1
+        session["pending_data"]["streams"] = []
+        session["stage"] = "COLLECTING_STREAM_NAMES"
+        prompt = "What do you call your business? Give it a name you use yourself."
     else:
-        # Single stream: use business type as name
-        btype_name = session["pending_data"].get("business_type", "Main Business").replace("_", " ").title()
-        session["pending_data"]["hustle_names"] = [btype_name]
-        session["stage"] = "PITCHING_MODULES"
-        await save_session(whatsapp_no, session)
-        await _send_module_pitch(whatsapp_no)
-
-async def _handle_hustle_names(
-    whatsapp_no: str, message: str, session: dict
-):
-    names = [n.strip() for n in message.split(",") if n.strip()]
-    if len(names) < 2:
-        await send_text(whatsapp_no, "Please enter at least two business names separated by a comma.")
+        await send_text(whatsapp_no, "Reply 1 for Yes, 2 for No.")
         return
-        
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
-    session["pending_data"]["hustle_names"] = names
-    session["stage"] = "PITCHING_MODULES"
     await save_session(whatsapp_no, session)
-    await _send_module_pitch(whatsapp_no)
+    await send_text(whatsapp_no, prompt)
 
-async def _send_module_pitch(whatsapp_no: str):
-    await send_text(
-        whatsapp_no,
-        "Now, choose how you want AAJE to work for you:\n\n"
-        "1️⃣ *Hustle-Manager* (₦1,000/month)\n"
-        "Keep your current bank. I will watch your account, send daily reports, and build your Trust Score.\n\n"
-        "2️⃣ *AAJE Pro* (Free)\n"
-        "Get a Squad business account. I will manage your money automatically, split it into vaults, and earn you interest. I earn only when you transact.\n\n"
-        "Reply with 1 or 2 to choose."
-    )
 
-async def _handle_pitching_modules(whatsapp_no: str, message: str, session: dict):
-    choice = message.strip()
-    if choice not in ["1", "2"]:
-        await send_text(whatsapp_no, "Please reply with 1 or 2.")
+async def _stream_names(whatsapp_no: str, message: str, session: dict):
+    data = session["pending_data"]
+    streams = data.setdefault("streams", [])
+    streams.append({"stream_name": message.strip(), "is_savings": False, "is_emergency": False})
+    if len(streams) < int(data.get("stream_count", 1)):
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, f"Name business {len(streams) + 1}.")
         return
-        
-    tier = "module_1" if choice == "1" else "module_2"
-    session["pending_data"]["tier"] = tier
-    
     session["stage"] = "COLLECTING_ACCOUNT"
     await save_session(whatsapp_no, session)
-    
-    acct_msg = "Enter your POS account number\n(the account where customers send money to you):"
-    if tier == "module_2":
-        acct_msg = "Enter your current bank account number\n(This is where you will withdraw your money to):"
-        
-    await send_text(whatsapp_no, acct_msg)
+    await send_text(whatsapp_no, "Enter the account number where customers send you money.")
 
-async def _handle_account_number(
-    whatsapp_no: str, message: str, session: dict
-):
-    account_no = message.strip().replace(" ", "")
-    if not account_no.isdigit() or len(account_no) != 10:
-        await send_text(
-            whatsapp_no,
-            "Please enter a valid 10-digit account number."
-        )
+
+async def _account(whatsapp_no: str, message: str, session: dict):
+    account_number = message.replace(" ", "").strip()
+    if not account_number.isdigit() or len(account_number) != 10:
+        await send_text(whatsapp_no, "Enter a valid 10-digit account number.")
         return
-
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
-    session["pending_data"]["account_number"] = account_no
+    session["pending_data"]["account_number"] = account_number
     session["stage"] = "COLLECTING_BANK"
     await save_session(whatsapp_no, session)
-    await send_text(
-        whatsapp_no,
-        "What is your bank name?\n"
-        "(e.g. GTBank, Access Bank, Opay, Kuda, Moniepoint)"
-    )
+    await send_text(whatsapp_no, "What bank is this account with? e.g. GTBank, Access, Opay, Kuda")
 
-async def _handle_bank_name(
-    whatsapp_no: str, message: str, session: dict
-):
-    bank_input = message.lower().strip()
-    bank_code = BANK_CODES.get(bank_input)
 
+async def _bank(whatsapp_no: str, message: str, session: dict):
+    bank_code = BANK_CODES.get(message.lower().strip())
     if not bank_code:
-        await send_text(
-            whatsapp_no,
-            "I don't recognize that bank. "
-            "Please try again.\n"
-            "Examples: GTBank, Access Bank, Zenith, "
-            "Opay, Kuda, Moniepoint"
-        )
+        await send_text(whatsapp_no, "I do not recognize that bank. Try GTBank, Access, Zenith, Opay, Kuda, or Moniepoint.")
         return
-
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
-    account_no = session["pending_data"].get("account_number")
-    trader_name = session["pending_data"].get("full_name")
-
+    data = session["pending_data"]
     try:
-        result = await lookup_account(account_no, bank_code)
-        bank_name_returned = result.get("name", "")
-
-        if names_match(trader_name, bank_name_returned):
-            # Identity confirmed
-            session["pending_data"]["verified_bank_account"] = account_no
-            session["pending_data"]["verified_bank_code"] = bank_code
-            session["pending_data"]["verified_bank_name"] = message.strip()
-            session["pending_data"]["verified_name"] = bank_name_returned
-            session["stage"] = "CREATING_PIN"
-            await save_session(whatsapp_no, session)
-
-            await send_text(
-                whatsapp_no,
-                f"✅ Identity confirmed — {bank_name_returned}\n\n"
-                f"Now create a 4-digit PIN.\n"
-                f"You will use this PIN for all transfers.\n"
-                f"Do not share it with anyone."
-            )
-        else:
-            attempts = session.get("identity_attempts", 0) + 1
-            session["identity_attempts"] = attempts
-
-            if attempts >= 3:
-                session["stage"] = "ESCALATED"
-                await save_session(whatsapp_no, session)
-                await send_text(
-                    whatsapp_no,
-                    "❌ We couldn't verify your identity after "
-                    "3 attempts. A team member will contact you."
-                )
-                from app.agents.support_agent import trigger_escalation
-                await trigger_escalation(
-                    whatsapp_no,
-                    "Identity verification failed 3 times",
-                    "identity_failure",
-                    session
-                )
-            else:
-                session["stage"] = "COLLECTING_ACCOUNT"
-                await save_session(whatsapp_no, session)
-                await send_text(
-                    whatsapp_no,
-                    f"❌ The name on this account doesn't match "
-                    f"what you gave us.\n"
-                    f"Attempt {attempts}/3. "
-                    f"Please check and try again.\n\n"
-                    f"Enter your account number:"
-                )
-
+        account = await lookup_account(data["account_number"], bank_code)
     except Exception:
-        await send_text(
-            whatsapp_no,
-            "I couldn't reach the bank right now. "
-            "Please try again in a moment."
-        )
+        await send_text(whatsapp_no, "I could not verify that account right now. Please try again.")
+        return
+    verified_name = account.get("account_name") or account.get("name", "")
+    if not names_match(data["full_name"], verified_name):
+        attempts = session.get("identity_attempts", 0) + 1
+        session["identity_attempts"] = attempts
+        if attempts >= 3:
+            session["stage"] = "ESCALATED"
+            await save_session(whatsapp_no, session)
+            await send_text(whatsapp_no, "We could not verify your identity after 3 attempts. A team member will contact you.")
+            return
+        session["stage"] = "COLLECTING_ACCOUNT"
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, "The account name does not match. Enter the account number again.")
+        return
+    first, last = split_full_name(data["full_name"])
+    customer = await register_customer(first, last, whatsapp_no, data["account_number"], bank_code)
+    data["verified_bank_account"] = data["account_number"]
+    data["verified_bank_code"] = bank_code
+    data["verified_bank_name"] = verified_name
+    data["squad_customer_id"] = customer.get("customer_id") or customer.get("id") or customer.get("customer_identifier")
+    session["stage"] = "CREATING_PIN"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, f"Identity confirmed: {verified_name}. Now create a 4-digit PIN.")
 
-async def _handle_identity_confirmation(whatsapp_no: str, message: str, session: dict):
-    # This function shouldn't normally be hit because the state immediately advances 
-    # from COLLECTING_BANK to CREATING_PIN. Adding it as a safety net.
-    pass
 
-async def _handle_pin_creation(
-    whatsapp_no: str, message: str, session: dict
-):
+async def _create_pin(whatsapp_no: str, message: str, session: dict):
     pin = message.strip()
     if not is_valid_pin(pin):
-        await send_text(
-            whatsapp_no,
-            "❌ PIN must be exactly 4 digits.\n"
-            "Avoid obvious PINs like 1234 or 1111.\n"
-            "Try again:"
-        )
+        await send_text(whatsapp_no, "PIN must be exactly 4 digits and not obvious like 1234 or 1111.")
         return
-
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
     session["pending_data"]["pin_hash"] = hash_pin(pin)
     session["stage"] = "CONFIRMING_PIN"
     await save_session(whatsapp_no, session)
-    await send_text(whatsapp_no, "Confirm your PIN — enter it again:")
+    await send_text(whatsapp_no, "Confirm your PIN. Enter it again.")
 
-async def _handle_pin_confirmation(
-    whatsapp_no: str, message: str, session: dict
-):
-    from app.services.pin import verify_pin
-    pin = message.strip()
-    
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
-    stored_hash = session["pending_data"].get("pin_hash")
 
-    if verify_pin(pin, stored_hash):
-        tier = session["pending_data"].get("tier", "module_2")
-        
-        if tier == "module_1":
-            session["stage"] = "AWAITING_MONO_CALLBACK"
-            user_id = str(uuid.uuid4())
-            session["pending_data"]["user_id"] = user_id
-            await save_session(whatsapp_no, session)
-            await set_mono_pending(whatsapp_no)
-    
-            connect_url = await generate_connect_url(user_id)
-            await send_cta_button(
-                whatsapp_no,
-                "✅ PIN set!\n\n"
-                "Since you chose Hustle-Manager, let's connect your bank account so I can "
-                "watch your transactions automatically.\n"
-                "This takes about 2 minutes:",
-                "Connect My Bank",
-                connect_url
-            )
-        else:
-            # Module 2 -> Squad Vaults
-            session["stage"] = "SETTING_UP_VAULTS"
-            await save_session(whatsapp_no, session)
-            from app.agents.vault_agent import handle_vault_setup
-            await handle_vault_setup(whatsapp_no, message, session)
-    else:
-        session["stage"] = "CREATING_PIN"
+async def _confirm_pin(whatsapp_no: str, message: str, session: dict):
+    if not verify_pin(message.strip(), session["pending_data"].get("pin_hash", "")):
         session["pending_data"].pop("pin_hash", None)
+        session["stage"] = "CREATING_PIN"
         await save_session(whatsapp_no, session)
-        await send_text(
-            whatsapp_no,
-            "❌ PINs don't match. Let's try again.\n"
-            "Create your 4-digit PIN:"
-        )
+        await send_text(whatsapp_no, "PINs do not match. Create your 4-digit PIN again.")
+        return
+    session["stage"] = "CREATING_ACCOUNTS"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "PIN set. I am creating your Squad accounts now.")
+    await _creating_accounts(whatsapp_no, message, session)
 
-async def _handle_debrief_time(
-    whatsapp_no: str, message: str, session: dict
-):
-    TIME_MAP = {
-        "1": "19:00:00", "7pm": "19:00:00",
-        "2": "20:00:00", "8pm": "20:00:00",
-        "3": "21:00:00", "9pm": "21:00:00",
-    }
-    time_val = TIME_MAP.get(message.lower().strip(), "20:00:00")
-    
-    if "pending_data" not in session:
-        session["pending_data"] = {}
-        
-    session["pending_data"]["daily_debrief_time"] = time_val
+
+async def _creating_accounts(whatsapp_no: str, _message: str, session: dict):
+    data = session["pending_data"]
+    for stream in data["streams"]:
+        account = await create_virtual_account(data["squad_customer_id"], stream["stream_name"])
+        stream["squad_account_number"] = account.get("account_number") or account.get("virtual_account_number")
+        stream["squad_account_id"] = account.get("account_id") or account.get("id")
+    session["stage"] = "CONFIGURING_SPLITS"
+    session["pending_data"]["split_index"] = 0
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, f"What percentage should go to {data['streams'][0]['stream_name']}?")
+
+
+async def _configuring_splits(whatsapp_no: str, message: str, session: dict):
+    data = session["pending_data"]
+    try:
+        percentage = float(message.strip().replace("%", ""))
+    except ValueError:
+        await send_text(whatsapp_no, "Enter the percentage as a number.")
+        return
+    index = int(data.get("split_index", 0))
+    data["streams"][index]["split_percentage"] = percentage
+    index += 1
+    data["split_index"] = index
+    if index < len(data["streams"]):
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, f"What percentage should go to {data['streams'][index]['stream_name']}?")
+        return
+    total = sum(float(stream.get("split_percentage", 0)) for stream in data["streams"])
+    if round(total, 2) != 100:
+        data["split_index"] = 0
+        for stream in data["streams"]:
+            stream.pop("split_percentage", None)
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, f"Those splits add up to {total}%. They must add up to 100%. Start again with {data['streams'][0]['stream_name']}.")
+        return
     session["stage"] = "POLICY_ACCEPTANCE"
     await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "Policy summary: AAJE creates Squad accounts, splits incoming money by your percentages, and withdrawals only go to your verified account. Reply I Accept to continue.")
 
-    tier = session.get("pending_data", {}).get("tier", "module_2")
-    
-    if tier == "module_1":
-        await send_buttons(
-            whatsapp_no,
-            "📋 Almost done! Here's what you're agreeing to:\n\n"
-            "✅ AAJE watches your linked account automatically\n"
-            "✅ You will be charged ₦1,000 per month for this service\n"
-            "✅ Your data is never sold to third parties\n"
-            "✅ You can cancel anytime\n\n"
-            "Do you accept?",
-            ["I Accept", "Cancel"]
-        )
-    else:
-        await send_buttons(
-            whatsapp_no,
-            "📋 Almost done! Here's what you're agreeing to:\n\n"
-            "✅ AAJE creates Squad Virtual Accounts for your business\n"
-            "✅ Withdrawals only go to your verified account\n"
-            "✅ Your data is never sold to third parties\n"
-            "✅ You can close your account anytime\n\n"
-            "Do you accept?",
-            ["I Accept", "Cancel"]
-        )
 
-async def _handle_policy_acceptance(
-    whatsapp_no: str, message: str, session: dict
-):
-    if message.strip() not in ["1", "i accept", "accept", "yes"]:
-        await send_text(
-            whatsapp_no,
-            "No problem. Reply 'I Accept' when you're ready."
-        )
+async def _policy_acceptance(whatsapp_no: str, message: str, session: dict):
+    if message.lower().strip() not in {"i accept", "accept", "yes", "1"}:
+        await send_text(whatsapp_no, "Reply I Accept when you are ready.")
         return
-
-    # Write everything to Postgres
-    data = session.get("pending_data", {})
-    first_name, last_name = split_full_name(data.get("full_name", "Trader"))
-
+    data = session["pending_data"]
+    user_id = uuid.uuid4()
     async with AsyncSessionLocal() as db:
-        user_id = data.get("user_id", str(uuid.uuid4()))
-        from sqlalchemy.sql import func
-        from app.models.hustle_stream import HustleStream
-        
-        await db.execute(
-            insert(User).values(
-                id=user_id,
-                whatsapp_no=whatsapp_no,
-                full_name=data.get("full_name", ""),
-                location=data.get("location", ""),
-                business_type=data.get("business_type", ""),
-                preferred_language=session.get("language", "en"),
-                pin_hash=data.get("pin_hash", ""),
-                verified_bank_account=data.get("verified_bank_account", ""),
-                verified_bank_code=data.get("verified_bank_code", ""),
-                verified_bank_name=data.get("verified_bank_name", ""),
-                mono_account_id=data.get("mono_account_id"),
-                squad_customer_id=data.get("squad_customer_id"),
-                tier=data.get("tier", "module_2"),
-                subscription_status="active" if data.get("tier") == "module_1" else "inactive",
-                daily_debrief_time=data.get("daily_debrief_time", "20:00:00"),
-                onboarding_complete=True,
-                policies_accepted_at=func.now()
-            )
-        )
-        
-        hustle_streams_to_insert = []
-        for i, stream_name in enumerate(data.get("hustle_names", [])):
-            squad_accounts = data.get(f"vaults_{i}", {})
-            slice_config = data.get(f"slices_{i}", {})
-            hustle_streams_to_insert.append({
-                "id": str(uuid.uuid4()),
-                "user_id": user_id,
-                "stream_name": stream_name,
-                "stream_type": data.get("business_type", ""),
-                "stream_source": "mono" if data.get("tier") == "module_1" else "squad",
-                "squad_virtual_accounts": squad_accounts,
-                "slice_config": slice_config,
-                "is_primary": (i == 0)
-            })
-            
-        if hustle_streams_to_insert:
-            await db.execute(insert(HustleStream).values(hustle_streams_to_insert))
-            
+        await db.execute(insert(User).values(
+            id=user_id,
+            whatsapp_no=whatsapp_no,
+            full_name=data["full_name"],
+            location=data["location"],
+            preferred_language=session.get("language", "en"),
+            pin_hash=data["pin_hash"],
+            verified_bank_account=data["verified_bank_account"],
+            verified_bank_code=data["verified_bank_code"],
+            verified_bank_name=data["verified_bank_name"],
+            squad_customer_id=data["squad_customer_id"],
+            onboarding_complete=True,
+        ))
+        for stream in data["streams"]:
+            stream_id = uuid.uuid4()
+            await db.execute(insert(IncomeStream).values(
+                id=stream_id,
+                user_id=user_id,
+                stream_name=stream["stream_name"],
+                stream_type=data.get("business_type"),
+                squad_account_id=stream.get("squad_account_id"),
+                squad_account_number=stream.get("squad_account_number"),
+                split_percentage=stream.get("split_percentage"),
+                is_savings=stream.get("is_savings", False),
+                is_emergency=stream.get("is_emergency", False),
+            ))
+            await db.execute(insert(Vault).values(user_id=user_id, stream_id=stream_id))
+        await db.execute(insert(Score).values(user_id=user_id, credit_grade="D", recommended_loan_ceiling=0))
         await db.commit()
 
     session["onboarding_complete"] = True
     session["stage"] = "ACTIVE"
     session["pending_data"] = {}
     await save_session(whatsapp_no, session)
-
-    debrief_time = data.get("daily_debrief_time", "20:00:00")[:5]
-    
-    if data.get("tier") == "module_1":
-        await send_text(
-            whatsapp_no,
-            f"🎉 Welcome to AAJE Hustle-Manager, {first_name}!\n\n"
-            f"I am now watching your Mono account. "
-            f"I will categorize your transactions and calculate your Trust Score.\n\n"
-            f"You will get your first daily report at {debrief_time}."
-        )
-    else:
-        await send_text(
-            whatsapp_no,
-            f"🎉 Welcome to AAJE Pro, {first_name}!\n\n"
-            f"I have created your Squad Virtual Accounts. "
-            f"Every time money comes in, I will split it into your vaults automatically.\n\n"
-            f"You will get your first daily report at {debrief_time}.\n\n"
-            f"Just trade — I will handle the rest. 💪"
-        )
+    first, _ = split_full_name(data["full_name"])
+    await send_text(whatsapp_no, f"Welcome to AAJE, {first}. Your accounts are ready. Send balance anytime to check your money.")
