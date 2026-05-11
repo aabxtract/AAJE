@@ -53,6 +53,12 @@ async def handle_onboarding(
     elif stage == "COLLECTING_BUSINESS_TYPE":
         await _handle_business_type(whatsapp_no, message, session)
 
+    elif stage == "COLLECTING_HUSTLE_COUNT":
+        await _handle_hustle_count(whatsapp_no, message, session)
+
+    elif stage == "COLLECTING_HUSTLE_NAMES":
+        await _handle_hustle_names(whatsapp_no, message, session)
+
     elif stage == "COLLECTING_ACCOUNT":
         await _handle_account_number(whatsapp_no, message, session)
 
@@ -176,6 +182,56 @@ async def _handle_business_type(
         session["pending_data"] = {}
         
     session["pending_data"]["business_type"] = btype
+    session["stage"] = "COLLECTING_HUSTLE_COUNT"
+    await save_session(whatsapp_no, session)
+    await send_buttons(
+        whatsapp_no,
+        "Do you run more than one business?",
+        ["Yes", "No"]
+    )
+
+async def _handle_hustle_count(
+    whatsapp_no: str, message: str, session: dict
+):
+    is_multi = message.lower().strip() in ["yes", "1"]
+    
+    if "pending_data" not in session:
+        session["pending_data"] = {}
+        
+    session["pending_data"]["is_multi_hustle"] = is_multi
+    
+    if is_multi:
+        session["stage"] = "COLLECTING_HUSTLE_NAMES"
+        await save_session(whatsapp_no, session)
+        await send_text(
+            whatsapp_no,
+            "Great! Please enter a name for each of your businesses, separated by a comma.\n"
+            "Example: Adunola Provisions, Adunola Catering"
+        )
+    else:
+        # Single stream: use business type as name
+        btype_name = session["pending_data"].get("business_type", "Main Business").replace("_", " ").title()
+        session["pending_data"]["hustle_names"] = [btype_name]
+        session["stage"] = "COLLECTING_ACCOUNT"
+        await save_session(whatsapp_no, session)
+        await send_text(
+            whatsapp_no,
+            "Enter your POS account number\n"
+            "(the account where customers send money to you):"
+        )
+
+async def _handle_hustle_names(
+    whatsapp_no: str, message: str, session: dict
+):
+    names = [n.strip() for n in message.split(",") if n.strip()]
+    if len(names) < 2:
+        await send_text(whatsapp_no, "Please enter at least two business names separated by a comma.")
+        return
+        
+    if "pending_data" not in session:
+        session["pending_data"] = {}
+        
+    session["pending_data"]["hustle_names"] = names
     session["stage"] = "COLLECTING_ACCOUNT"
     await save_session(whatsapp_no, session)
     await send_text(
@@ -395,9 +451,13 @@ async def _handle_policy_acceptance(
     first_name, last_name = split_full_name(data.get("full_name", "Trader"))
 
     async with AsyncSessionLocal() as db:
+        user_id = data.get("user_id", str(uuid.uuid4()))
+        from sqlalchemy.sql import func
+        from app.models.hustle_stream import HustleStream
+        
         await db.execute(
             insert(User).values(
-                id=data.get("user_id", str(uuid.uuid4())),
+                id=user_id,
                 whatsapp_no=whatsapp_no,
                 full_name=data.get("full_name", ""),
                 location=data.get("location", ""),
@@ -409,12 +469,29 @@ async def _handle_policy_acceptance(
                 verified_bank_name=data.get("verified_bank_name", ""),
                 mono_account_id=data.get("mono_account_id"),
                 squad_customer_id=data.get("squad_customer_id"),
-                slice_config=data.get("slice_config", {}),
                 daily_debrief_time=data.get("daily_debrief_time", "20:00:00"),
                 onboarding_complete=True,
-                policies_accepted_at="NOW()"
+                policies_accepted_at=func.now()
             )
         )
+        
+        hustle_streams_to_insert = []
+        for i, stream_name in enumerate(data.get("hustle_names", [])):
+            squad_accounts = data.get(f"vaults_{i}", {})
+            slice_config = data.get(f"slices_{i}", {})
+            hustle_streams_to_insert.append({
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "stream_name": stream_name,
+                "stream_type": data.get("business_type", ""),
+                "squad_virtual_accounts": squad_accounts,
+                "slice_config": slice_config,
+                "is_primary": (i == 0)
+            })
+            
+        if hustle_streams_to_insert:
+            await db.execute(insert(HustleStream).values(hustle_streams_to_insert))
+            
         await db.commit()
 
     session["onboarding_complete"] = True

@@ -1,8 +1,95 @@
-async def get_daily_raw_context(user, db) -> dict:
-    return {"raw_data": "daily info here"}
+import logging
+from app.services.squad import transfer
+from app.config import settings
+from sqlalchemy.sql import insert
+from app.models.vault_movement import VaultMovement
 
-async def get_split_raw_context(user, db, transaction_id) -> dict:
-    return {"raw_data": f"split info for {transaction_id}"}
+logger = logging.getLogger(__name__)
 
-def calculate_refinery_signals(scrubbed_context: dict) -> dict:
-    return {"signals": "Refinery computed insights"}
+def _apply_rules(user, transaction: dict, slice_config: dict) -> dict:
+    # Level 2 rule-based adjustments
+    # Simplified for hackathon: return base config
+    return slice_config
+
+async def execute_split(user, transaction: dict, stream_id: str, db):
+    """
+    Auto-splits incoming credit into the stream's vaults and collects the automation fee.
+    """
+    from sqlalchemy import select
+    from app.models.hustle_stream import HustleStream
+    
+    stream_result = await db.execute(select(HustleStream).where(HustleStream.id == stream_id))
+    stream = stream_result.scalar_one_or_none()
+    
+    if not stream or not stream.slice_config:
+        logger.warning(f"No slice config found for stream {stream_id}")
+        return
+        
+    amount_kobo = int(transaction.get("amount", 0) * 100)
+    if amount_kobo <= 0:
+        return
+        
+    # Subtract 5 naira fee (500 kobo)
+    fee_kobo = 500
+    amount_to_split = amount_kobo - fee_kobo
+    
+    if amount_to_split <= 0:
+        return
+        
+    adjusted_config = _apply_rules(user, transaction, stream.slice_config)
+    
+    for vault_name, percentage in adjusted_config.items():
+        if percentage <= 0:
+            continue
+            
+        vault_amount = int((percentage / 100.0) * amount_to_split)
+        if vault_amount <= 0:
+            continue
+            
+        vault_account_number = stream.squad_virtual_accounts.get(vault_name, {}).get("account_number")
+        bank_code = stream.squad_virtual_accounts.get(vault_name, {}).get("bank_code", "000000")
+        
+        if vault_account_number:
+            ref = f"split_{transaction['id']}_{vault_name}"
+            # Squad transfer requires bank code, using dummy or stored
+            await transfer(vault_account_number, bank_code, vault_amount, f"Split to {vault_name}", ref)
+            
+            # Log movement
+            movement = VaultMovement(
+                user_id=user.id,
+                stream_id=stream_id,
+                source_transaction_id=transaction["id"],
+                vault_name=vault_name,
+                amount=vault_amount / 100.0,
+                direction="in",
+                squad_transfer_ref=ref,
+                fee_charged=0
+            )
+            db.add(movement)
+            
+    # Transfer 5 naira fee to AAJE revenue account
+    fee_ref = f"fee_{transaction['id']}"
+    await transfer(
+        settings.squad_revenue_account, 
+        settings.squad_revenue_bank_code, 
+        fee_kobo, 
+        "AAJE Automation Fee", 
+        fee_ref
+    )
+    
+    fee_movement = VaultMovement(
+        user_id=user.id,
+        stream_id=stream_id,
+        source_transaction_id=transaction["id"],
+        vault_name="AAJE Fee",
+        amount=5.00,
+        direction="out",
+        squad_transfer_ref=fee_ref,
+        fee_charged=5.00
+    )
+    db.add(fee_movement)
+    await db.commit()
+    
+    # Notify trader
+    from app.services.notifier import notify_split
+    await notify_split(user, db, str(transaction["id"]))

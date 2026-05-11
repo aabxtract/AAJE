@@ -20,8 +20,6 @@ class User(Base):
     verified_bank_code = Column(String(10))
     verified_bank_name = Column(String(100))
     squad_customer_id = Column(String(100))
-    squad_virtual_accounts = Column(JSON, default=dict)
-    slice_config = Column(JSON, default=dict)
     daily_debrief_time = Column(Time)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     onboarding_stage = Column(String(30), default="NEW")

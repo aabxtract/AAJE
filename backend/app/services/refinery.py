@@ -47,22 +47,41 @@ def daily_summary(df: pd.DataFrame) -> dict:
     }
 
 
-def compute_trader_score(df: pd.DataFrame, days: int = 90) -> float:
+def compute_trader_score(df: pd.DataFrame, days: int = 90, savings_balance: float = 0.0) -> float:
     """
     Trader score: 0–100.
-    Based on: active_days / total_days (consistency) × log(total_volume).
+    4 components (25 points each): consistency, volume, savings discipline, tenure.
     """
     if df.empty:
         return 0.0
+    
     cutoff = datetime.utcnow() - timedelta(days=days)
     window = df[df["date"] >= pd.Timestamp(cutoff)]
     if window.empty:
         return 0.0
+        
+    # 1. Consistency (25 pts): active days vs expected (e.g. 15 days/month is good)
     active_days = window["date"].dt.date.nunique()
-    consistency = active_days / days
+    consistency_ratio = min(active_days / (days * 0.5), 1.0)  # assume trading every other day is max consistency
+    consistency_pts = consistency_ratio * 25.0
+    
+    # 2. Volume (25 pts): log scale capped at 5M
     total_volume = window[window["type"] == "CREDIT"]["amount"].sum()
-    volume_score = min(np.log1p(total_volume) / np.log1p(5_000_000), 1.0)
-    score = round((consistency * 0.6 + volume_score * 0.4) * 100, 1)
+    volume_ratio = min(np.log1p(total_volume) / np.log1p(5_000_000), 1.0)
+    volume_pts = volume_ratio * 25.0
+    
+    # 3. Savings Discipline (25 pts): ratio of savings balance to 30d revenue
+    revenue_30d = df[(df["date"] >= pd.Timestamp(datetime.utcnow() - timedelta(days=30))) & (df["type"] == "CREDIT")]["amount"].sum()
+    savings_ratio = min(savings_balance / revenue_30d, 1.0) if revenue_30d > 0 else 0.0
+    savings_pts = savings_ratio * 25.0
+    
+    # 4. Tenure (25 pts): days since first transaction
+    first_tx_date = df["date"].min().to_pydatetime()
+    tenure_days = (datetime.utcnow() - first_tx_date).days
+    tenure_ratio = min(tenure_days / 90.0, 1.0)
+    tenure_pts = tenure_ratio * 25.0
+    
+    score = round(consistency_pts + volume_pts + savings_pts + tenure_pts, 1)
     return score
 
 

@@ -53,11 +53,16 @@ async def route_message(
         await process_receipt(whatsapp_no, media_url)
         return
 
-    # Detect intent and route to correct agent
-    from app.utils.message_parser import detect_intent
-    intent = detect_intent(message, session.get("language", "en"))
-
-    logger.info("Intent: %s | from: %s", intent, whatsapp_no)
+    # Audio → Transcription
+    if media_url and media_type and "audio" in media_type:
+        from app.services.transcription import transcribe_voice_note
+        transcribed_text = await transcribe_voice_note(media_url)
+        if transcribed_text:
+            await send_text(whatsapp_no, f'"{transcribed_text}"')
+            message = transcribed_text
+        else:
+            await send_text(whatsapp_no, "I couldn't hear that clearly. Please type your message instead.")
+            return
 
     # Check frustration before routing
     from app.utils.frustration import detect_frustration
@@ -67,6 +72,12 @@ async def route_message(
             whatsapp_no, message, "frustration", session
         )
         return
+
+    # Detect intent and route to correct agent
+    from app.utils.message_parser import detect_intent
+    intent = detect_intent(message, session.get("language", "en"))
+
+    logger.info("Intent: %s | from: %s", intent, whatsapp_no)
 
     # Intent → agent dispatch
     from app.agents.insight_agent import handle_summary
