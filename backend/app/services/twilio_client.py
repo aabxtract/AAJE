@@ -8,8 +8,12 @@ Handles:
   - CTA buttons (link with label)
   - Media messages (images, documents)
 """
+import logging
+import time
 from twilio.rest import Client
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 client = Client(
     settings.twilio_account_sid,
@@ -19,9 +23,23 @@ client = Client(
 FROM = settings.twilio_whatsapp_from
 
 
+def _send_with_retry(max_retries=3, **kwargs):
+    """Send a Twilio message with retry logic for transient connection errors."""
+    for attempt in range(max_retries):
+        try:
+            return client.messages.create(**kwargs)
+        except Exception as e:
+            logger.warning(f"Twilio send attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(1)  # Wait 1 second before retrying
+            else:
+                logger.error(f"Twilio send failed after {max_retries} attempts")
+                raise
+
+
 async def send_text(to: str, message: str):
     """Send a plain text WhatsApp message."""
-    client.messages.create(
+    _send_with_retry(
         from_=FROM,
         to=f"whatsapp:{to}",
         body=message,
@@ -49,7 +67,7 @@ async def send_cta_button(
 
 async def send_voice_note(to: str, audio_url: str):
     """Send a voice note (audio file at public URL)."""
-    client.messages.create(
+    _send_with_retry(
         from_=FROM,
         to=f"whatsapp:{to}",
         media_url=[audio_url],
@@ -58,7 +76,7 @@ async def send_voice_note(to: str, audio_url: str):
 
 async def send_media(to: str, media_url: str, caption: str = ""):
     """Send an image or document with optional caption."""
-    client.messages.create(
+    _send_with_retry(
         from_=FROM,
         to=f"whatsapp:{to}",
         media_url=[media_url],

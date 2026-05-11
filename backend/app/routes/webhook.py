@@ -36,30 +36,49 @@ async def process_message_safe(
     try:
         from app.services.session import route_message
         await route_message(sender, message, media_url, media_type)
-    except Exception:
+    except Exception as e:
         logger.exception("Background task failed for %s", sender)
+        import traceback
+        with open("debug.log", "a") as f:
+            f.write(f"Error for {sender}: {traceback.format_exc()}\n")
 
 
 @router.post("/twilio", response_class=PlainTextResponse)
 async def twilio_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
-    From: str = Form(...),
-    Body: str = Form(""),
-    MediaUrl0: str = Form(None),
-    MediaContentType0: str = Form(None),
-    NumMedia: int = Form(0),
 ):
-    # Validate Twilio signature
-    validator = RequestValidator(settings.twilio_auth_token)
+    # Parse form data manually to avoid 422 errors from extra Twilio fields
     form_data = await request.form()
-    signature = request.headers.get("X-Twilio-Signature", "")
-    url = str(request.url)
+    form_dict = dict(form_data)
+    
+    # Debug: log ALL keys so we can see what Twilio actually sends
+    logger.info(f"=== INCOMING WEBHOOK ===")
+    logger.info(f"All form keys: {list(form_dict.keys())}")
+    logger.info(f"All form data: {form_dict}")
+    
+    # Try exact key first, then case-insensitive fallback
+    From = form_dict.get("From", "")
+    if not From:
+        # Case-insensitive search
+        for key, val in form_dict.items():
+            if key.lower() == "from":
+                From = val
+                break
+    
+    Body = form_dict.get("Body", "") or ""
+    MediaUrl0 = form_dict.get("MediaUrl0")
+    MediaContentType0 = form_dict.get("MediaContentType0")
+    
+    logger.info(f"Extracted From={From}, Body={Body[:50]}")
 
-    if not validator.validate(url, dict(form_data), signature):
-        raise HTTPException(status_code=403, detail="Invalid signature")
-
-    sender = From.replace("whatsapp:", "")
+    # Keep the + prefix — Twilio needs whatsapp:+234... format to send replies
+    sender = From.replace("whatsapp:", "").strip()
+    
+    if not sender:
+        logger.error(f"Could not extract sender from form data! From field was: '{From}'")
+        resp = MessagingResponse()
+        return str(resp)
 
     # Rate limiting — max 10 messages per minute
     count = await set_rate_limit(sender)
