@@ -26,7 +26,7 @@ _STAGE_REPROMPT: dict[str, str] = {
         "Let's go back ↩\n\n"
         "Choose your language:\n1. Yoruba\n2. Igbo\n3. Hausa\n4. Pidgin\n5. English"
     ),
-    "COLLECTING_NAME": "Let's go back ↩\n\nWhat is your full name?",
+    "COLLECTING_NAME": "Let's go back ↩\n\nWhat is your full name?\nExample: Adebayo Olusegun Okonkwo",
     "COLLECTING_LOCATION": "Let's go back ↩\n\nWhat market or town do you trade in?",
     "COLLECTING_BUSINESS_TYPE": (
         "Let's go back ↩\n\nWhat type of business do you run?\n"

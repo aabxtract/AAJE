@@ -37,7 +37,7 @@ async def categorize_transaction(narration: str, stream_names: list[str]) -> str
 
 
 async def translate_message(text: str, language: str) -> str:
-    if language == "en":
+    if not text or language == "en":
         return text
     language_map = {
         "yo": ("Yoruba", "respectful warm tone"),
@@ -56,9 +56,9 @@ async def translate_message(text: str, language: str) -> str:
                 {
                     "role": "system",
                     "content": (
-                        f"Translate into {language_name}. Use a {tone}. "
-                        "For non-English languages, do not include English in the output. "
-                        "Return only the translated message."
+                        f"You are a professional translator. Translate the given text into {language_name}. "
+                        f"Use a {tone}. Do not add any explanations, prefixes, or notes. "
+                        "Return ONLY the translated text. If you cannot translate it, return the original text."
                     ),
                 },
                 {"role": "user", "content": text},
@@ -66,7 +66,11 @@ async def translate_message(text: str, language: str) -> str:
             temperature=0.2,
             max_tokens=300,
         )
-        return response.choices[0].message.content.strip()
+        translated = response.choices[0].message.content.strip()
+        if not translated:
+            logger.warning("LLM returned empty translation for %s", language)
+            return text
+        return translated
     except Exception:
         logger.exception("Translation failed for language %s", language)
         return text

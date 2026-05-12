@@ -33,15 +33,21 @@ async def _post(payload: dict) -> dict:
 async def send_translated(to: str, message: str, language: str = "en") -> dict:
     """
     Translate ``message`` into the user's chosen language via the LLM,
-    then send it.  Falls back to raw English if translation fails or is
-    not needed (language == 'en').
+    then send it.  Falls back to raw English if translation fails, returns empty,
+    or is not needed (language == 'en').
     """
     from app.intelligence.llm import translate_message  # lazy import avoids circular deps
     translated = await translate_message(message, language)
-    return await send_text(to, translated)
+    # Fallback to original message if translation failed or returned empty
+    final_message = translated if (translated and translated.strip()) else message
+    return await send_text(to, final_message)
 
 
 async def send_text(to: str, message: str) -> dict:
+    if not message or not message.strip():
+        logger.warning("Attempted to send empty text to %s, skipping", to)
+        return {"status": "skipped_empty"}
+    
     return await _post({
         "messaging_product": "whatsapp",
         "to": to,

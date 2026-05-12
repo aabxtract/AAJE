@@ -128,12 +128,12 @@ async def _language(whatsapp_no, message, session):
     session["language"] = lang
     session["stage"] = "COLLECTING_NAME"
     await save_session(whatsapp_no, session)
-    await send_translated(whatsapp_no, "What is your full name?", lang)
+    await send_translated(whatsapp_no, "What is your full name?\nExample: Adebayo Olusegun Okonkwo", lang)
 
 
 async def _name(whatsapp_no, message, session):
     if len(message.strip()) < 2:
-        await _tx(whatsapp_no, "Please enter your full name.", session)
+        await _tx(whatsapp_no, "Please enter your full name (first, middle, last).\nExample: Adebayo Olusegun Okonkwo", session)
         return
     await push_state_history(whatsapp_no, session)  # snapshot COLLECTING_NAME
     session["pending_data"]["full_name"] = message.strip()
@@ -259,10 +259,10 @@ async def _confirm_identity(whatsapp_no, message, session):
         return
 
     # Register Squad customer in background
-    first, last = split_full_name(data["full_name"])
+    first, middle, last = split_full_name(data["full_name"])
     try:
         customer = await register_customer(
-            first, last, whatsapp_no, data["account_number"], data["bank_code"]
+            first, middle, last, whatsapp_no, data["account_number"], data["bank_code"]
         )
         data["squad_customer_id"] = (
             customer.get("customer_id")
@@ -351,10 +351,10 @@ async def _creating_accounts(whatsapp_no, _msg, session):
 
     if not customer_id:
         # Retry Squad registration
-        first, last = split_full_name(data["full_name"])
+        first, middle, last = split_full_name(data["full_name"])
         try:
             customer = await register_customer(
-                first, last, whatsapp_no, data["account_number"], data["bank_code"]
+                first, middle, last, whatsapp_no, data["account_number"], data["bank_code"]
             )
             customer_id = (
                 customer.get("customer_id")
@@ -367,11 +367,20 @@ async def _creating_accounts(whatsapp_no, _msg, session):
             await _tx(whatsapp_no, "Something went wrong setting up your accounts. Please try again in a moment.", session)
             return
 
-    for stream in data["streams"]:
+    first, middle, last = split_full_name(data["full_name"])
+    for i, stream in enumerate(data["streams"]):
         try:
-            account = await create_virtual_account(customer_id, stream["stream_name"])
+            # Unique ID for each account to satisfy Squad reconciliation
+            stream_id = f"{customer_id}-{i}"
+            # Include stream name in last name so user can identify the account
+            display_last = f"{last} ({stream['stream_name']})"
+
+            account = await create_virtual_account(
+                stream_id, first, middle, display_last, whatsapp_no
+            )
             stream["squad_account_number"] = account.get("account_number") or account.get("virtual_account_number")
             stream["squad_account_id"] = account.get("account_id") or account.get("id")
+            stream["squad_customer_id"] = stream_id
         except Exception:
             logger.exception("Virtual account creation failed for %s", stream["stream_name"])
             stream["squad_account_number"] = None
@@ -509,7 +518,7 @@ async def _policy_acceptance(whatsapp_no, message, session):
     await save_session(whatsapp_no, session)
     await clear_state_history(whatsapp_no)  # onboarding done — no more "back"
 
-    first, _ = split_full_name(data["full_name"])
+    first, _, _ = split_full_name(data["full_name"])
     stream_summary = "\n".join(
         f"  • {s['stream_name']}: {s.get('split_percentage', 0)}%"
         for s in data["streams"]
