@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from groq import AsyncGroq
 
@@ -8,6 +9,20 @@ logger = logging.getLogger(__name__)
 
 client = AsyncGroq(api_key=settings.groq_api_key)
 MODEL = "openai/gpt-oss-120b"
+
+
+def _get_client() -> Optional[AsyncGroq]:
+    global client
+    if client is None:
+        key = getattr(settings, "groq_api_key", None)
+        if not key:
+            return None
+        try:
+            client = AsyncGroq(api_key=key)
+        except Exception:
+            logger.exception("Failed to initialize Groq client")
+            client = None
+    return client
 
 
 async def categorize_transaction(narration: str, stream_names: list[str]) -> str:
@@ -48,9 +63,14 @@ async def translate_message(text: str, language: str) -> str:
     target = language_map.get(language)
     if not target:
         return text
+    c = _get_client()
+    if not c:
+        # No API key available — fallback to English text to avoid crashing.
+        logger.warning("Groq client unavailable; returning English fallback for translation to %s", language)
+        return text
     language_name, tone = target
     try:
-        response = await client.chat.completions.create(
+        response = await c.chat.completions.create(
             model=MODEL,
             messages=[
                 {
