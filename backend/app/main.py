@@ -1,33 +1,21 @@
 from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from app.routes.webhook import router as webhook_router
-from app.routes.mono_webhook import router as mono_router
+
 from app.routes.admin import router as admin_router
-from scheduler import start_scheduler
+from app.routes.intelligence_api import router as intelligence_router
+from app.routes.mono_webhook import router as mono_router
+from app.routes.squad_webhook import router as squad_router
+from app.routes.webhook import router as whatsapp_router
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Create all tables if they don't exist
-    from app.database import engine, Base
-    import app.models  # noqa: F401 — registers all models with Base.metadata
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    start_scheduler()
-    yield
+app = FastAPI(title="AAJE", version="1.0.0")
 
-
-app = FastAPI(
-    title="AAJE - Digital Business Manager",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-app.include_router(webhook_router, prefix="/webhook")
-app.include_router(mono_router, prefix="/webhook")
+app.include_router(whatsapp_router)
+app.include_router(squad_router)
+app.include_router(mono_router)
+app.include_router(intelligence_router)
 app.include_router(admin_router, prefix="/admin")
 
 
 @app.get("/health")
 async def health():
-    return {"status": "AAJE is live", "env": "sandbox"}
+    return {"status": "ok", "environment": "sandbox"}

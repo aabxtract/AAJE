@@ -1,102 +1,91 @@
-async def handle_vault_setup(whatsapp_no: str, message: str, session: dict):
-    from app.redis import save_session
-    from app.services.twilio_client import send_text
-    
-    data = session.get("pending_data", {})
-    hustles = data.get("hustle_names", [])
-    
-    # Simple default vaults based on business type
-    btype = data.get("business_type", "other")
-    
-    if "current_vault_index" not in data:
-        data["current_vault_index"] = 0
-        
-    idx = data["current_vault_index"]
-    
-    if message.lower().strip() == "yes" and idx > 0:
-        pass # Acknowledged previous vault setup
+from sqlalchemy import desc, select
 
-    if idx < len(hustles):
-        stream_name = hustles[idx]
-        vaults = ["Stock", "Savings", "Emergency", "Liquid"] if btype == "market_trader" else ["Operations", "Profit", "Emergency", "Liquid"]
-        
-        # Here we would call Squad API for each vault to get a virtual account
-        # Mocking for now:
-        vault_accounts = {v: {"account_number": "1234567890", "bank_name": "Squad"} for v in vaults}
-        data[f"vaults_{idx}"] = vault_accounts
-        
-        data["current_vault_index"] = idx + 1
-        session["pending_data"] = data
-        
-        if data["current_vault_index"] < len(hustles):
-            await save_session(whatsapp_no, session)
-            await send_text(
-                whatsapp_no,
-                f"For {stream_name}, I've created these vaults: {', '.join(vaults)}.\nReply 'Yes' to continue."
-            )
-        else:
-            session["stage"] = "CONFIGURING_SLICES"
-            data["current_slice_index"] = 0
-            await save_session(whatsapp_no, session)
-            await send_text(
-                whatsapp_no,
-                f"All vaults created! Now let's set how to divide money for {hustles[0]}.\n"
-                f"Reply with percentages for {', '.join(vaults)} (e.g. 50,20,10,20):"
-            )
-    else:
-        # Should not hit this
-        pass
+from app.database import AsyncSessionLocal
+from app.intelligence.llm import generate_insight, translate_message
+from app.intelligence.refinery import compute_score
+from app.models.income_stream import IncomeStream
+from app.models.score import Score
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.vault import Vault
+from app.services.whatsapp_client import send_text
+from app.utils.formatters import format_naira
+from app.utils.pii_scrubber import scrub
 
-async def handle_slice_config(whatsapp_no: str, message: str, session: dict):
-    from app.redis import save_session
-    from app.services.twilio_client import send_text
-    
-    data = session.get("pending_data", {})
-    hustles = data.get("hustle_names", [])
-    idx = data.get("current_slice_index", 0)
-    
-    btype = data.get("business_type", "other")
-    vaults = ["Stock", "Savings", "Emergency", "Liquid"] if btype == "market_trader" else ["Operations", "Profit", "Emergency", "Liquid"]
-    
-    # Parse percentages
-    parts = [p.strip() for p in message.split(",")]
-    if len(parts) != len(vaults):
-        await send_text(whatsapp_no, f"Please provide {len(vaults)} numbers separated by commas.")
-        return
-        
-    try:
-        percentages = [int(p) for p in parts]
-        if sum(percentages) != 100:
-            await send_text(whatsapp_no, "The percentages must add up to 100. Try again:")
+
+async def _user_for_whatsapp(db, whatsapp_no: str) -> User | None:
+    result = await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))
+    return result.scalar_one_or_none()
+
+
+async def handle_balance_check(whatsapp_no: str, session: dict):
+    async with AsyncSessionLocal() as db:
+        user = await _user_for_whatsapp(db, whatsapp_no)
+        if not user:
+            await send_text(whatsapp_no, "I could not find your AAJE account.")
             return
-            
-        slice_config = {vaults[i]: percentages[i] for i in range(len(vaults))}
-        data[f"slices_{idx}"] = slice_config
-        
-        idx += 1
-        data["current_slice_index"] = idx
-        session["pending_data"] = data
-        
-        if idx < len(hustles):
-            await save_session(whatsapp_no, session)
-            await send_text(
-                whatsapp_no,
-                f"Now for {hustles[idx]}.\nReply with percentages for {', '.join(vaults)} (e.g. 50,20,10,20):"
-            )
-        else:
-            session["stage"] = "SETTING_DEBRIEF_TIME"
-            await save_session(whatsapp_no, session)
-            await send_text(
-                whatsapp_no,
-                "All slices configured!\n\nWhat time should I send your daily report?\n1. 7pm\n2. 8pm\n3. 9pm"
-            )
-    except ValueError:
-        await send_text(whatsapp_no, "Please enter valid numbers.")
+        result = await db.execute(
+            select(IncomeStream, Vault)
+            .join(Vault, Vault.stream_id == IncomeStream.id)
+            .where(IncomeStream.user_id == user.id)
+        )
+        rows = result.all()
 
-async def handle_vault(whatsapp_no: str, message: str, session: dict):
-    # Placeholder for vault related intents like vault_balance, move_vault
-    pass
+    if not rows:
+        message = "No accounts found yet."
+    else:
+        lines = ["Your AAJE balances:"]
+        for index, (stream, vault) in enumerate(rows, start=1):
+            lines.append(f"{index}. {stream.stream_name}: {format_naira(vault.current_balance or 0)}")
+        message = "\n".join(lines)
 
-async def execute_vault_move(whatsapp_no: str, session: dict, db):
-    # Placeholder for PIN gated vault move action
-    pass
+    message = await translate_message(message, session.get("language", "en"))
+    await send_text(whatsapp_no, message)
+
+
+async def handle_summary(whatsapp_no: str, session: dict):
+    async with AsyncSessionLocal() as db:
+        user = await _user_for_whatsapp(db, whatsapp_no)
+        if not user:
+            await send_text(whatsapp_no, "I could not find your AAJE account.")
+            return
+        score = await compute_score(str(user.id), db)
+        tx_result = await db.execute(
+            select(Transaction)
+            .where(Transaction.user_id == user.id)
+            .order_by(desc(Transaction.timestamp))
+            .limit(30)
+        )
+        transactions = tx_result.scalars().all()
+
+    context = scrub({
+        "full_name": user.full_name,
+        "score": score,
+        "transactions": [
+            {"amount": float(tx.amount), "type": tx.type, "category": tx.category}
+            for tx in transactions
+        ],
+    })
+    insight = await generate_insight(context)
+    insight = await translate_message(insight, session.get("language", "en"))
+    await send_text(whatsapp_no, insight)
+
+
+async def handle_score(whatsapp_no: str, session: dict):
+    async with AsyncSessionLocal() as db:
+        user = await _user_for_whatsapp(db, whatsapp_no)
+        if not user:
+            await send_text(whatsapp_no, "I could not find your AAJE account.")
+            return
+        result = await db.execute(select(Score).where(Score.user_id == user.id))
+        score = result.scalar_one_or_none()
+
+    if not score:
+        message = "Your score is not ready yet. Keep receiving verified payments to build it."
+    else:
+        message = (
+            f"Your AAJE score is {score.trader_score:.1f}, grade {score.credit_grade}. "
+            f"Suggested credit threshold: {format_naira(score.recommended_loan_ceiling or 0)}."
+        )
+    message = await translate_message(message, session.get("language", "en"))
+    await send_text(whatsapp_no, message)

@@ -1,23 +1,9 @@
-"""
-Twilio WhatsApp inbound webhook.
-
-Flow:
-  1. Validate Twilio signature → 403 on failure
-  2. Rate limit check → 10 messages/minute max
-  3. Ack immediately with empty MessagingResponse (< 5 seconds)
-  4. Dispatch to session router as a BackgroundTask
-
-Uses BackgroundTasks instead of asyncio.create_task because:
-  - Errors propagate through FastAPI's logging (no silent failures)
-  - Tasks are tracked by the ASGI server for graceful shutdown
-  - It's the idiomatic FastAPI pattern for this use case
-"""
+import hashlib
+import hmac
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Request, Form, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
-from twilio.request_validator import RequestValidator
-from twilio.twiml.messaging_response import MessagingResponse
 
 from app.config import settings
 from app.redis import set_rate_limit
@@ -26,76 +12,76 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def process_message_safe(
-    sender: str,
-    message: str,
-    media_url: str | None,
-    media_type: str | None,
-):
-    """Wrapper that ensures background task errors are always logged."""
+def _verify_meta_signature(payload: bytes, signature: str) -> bool:
+    if not signature.startswith("sha256="):
+        return False
+    expected = hmac.new(
+        settings.meta_app_secret.encode(),
+        payload,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(f"sha256={expected}", signature)
+
+
+async def process_message_safe(sender: str, message: str):
     try:
         from app.services.session import route_message
-        await route_message(sender, message, media_url, media_type)
-    except Exception as e:
-        logger.exception("Background task failed for %s", sender)
-        import traceback
-        with open("debug.log", "a") as f:
-            f.write(f"Error for {sender}: {traceback.format_exc()}\n")
+
+        await route_message(sender, message)
+    except Exception:
+        logger.exception("Message processing failed for %s", sender)
+        try:
+            from app.services.whatsapp_client import send_text
+
+            await send_text(sender, "Something went wrong. Please try again in a moment.")
+        except Exception:
+            logger.exception("Failed to send fallback error message to %s", sender)
 
 
-@router.post("/twilio", response_class=PlainTextResponse)
-async def twilio_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks,
+@router.get("/webhook/whatsapp", response_class=PlainTextResponse)
+async def verify_whatsapp_webhook(
+    hub_mode: str = Query(alias="hub.mode"),
+    hub_challenge: str = Query(alias="hub.challenge"),
+    hub_verify_token: str = Query(alias="hub.verify_token"),
 ):
-    # Parse form data manually to avoid 422 errors from extra Twilio fields
-    form_data = await request.form()
-    form_dict = dict(form_data)
-    
-    # Debug: log ALL keys so we can see what Twilio actually sends
-    logger.info(f"=== INCOMING WEBHOOK ===")
-    logger.info(f"All form keys: {list(form_dict.keys())}")
-    logger.info(f"All form data: {form_dict}")
-    
-    # Try exact key first, then case-insensitive fallback
-    From = form_dict.get("From", "")
-    if not From:
-        # Case-insensitive search
-        for key, val in form_dict.items():
-            if key.lower() == "from":
-                From = val
-                break
-    
-    Body = form_dict.get("Body", "") or ""
-    MediaUrl0 = form_dict.get("MediaUrl0")
-    MediaContentType0 = form_dict.get("MediaContentType0")
-    
-    logger.info(f"Extracted From={From}, Body={Body[:50]}")
+    if hub_mode == "subscribe" and hub_verify_token == settings.meta_webhook_verify_token:
+        return hub_challenge
+    raise HTTPException(status_code=403, detail="Invalid verify token")
 
-    # Keep the + prefix — Twilio needs whatsapp:+234... format to send replies
-    sender = From.replace("whatsapp:", "").strip()
-    
-    if not sender:
-        logger.error(f"Could not extract sender from form data! From field was: '{From}'")
-        resp = MessagingResponse()
-        return str(resp)
 
-    # Rate limiting — max 10 messages per minute
+@router.post("/webhook/whatsapp")
+async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
+    payload = await request.body()
+    signature = request.headers.get("x-hub-signature-256", "")
+    if not _verify_meta_signature(payload, signature):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    data = await request.json()
+    value = (
+        data.get("entry", [{}])[0]
+        .get("changes", [{}])[0]
+        .get("value", {})
+    )
+    messages = value.get("messages") or []
+    if not messages:
+        return {"status": "ignored"}
+
+    message = messages[0]
+    sender = message.get("from")
+    message_type = message.get("type")
+    if not sender or message_type != "text":
+        return {"status": "ignored"}
+
+    body = (message.get("text") or {}).get("body", "").strip()
+    if not body:
+        return {"status": "ignored"}
+
     count = await set_rate_limit(sender)
     if count > 10:
-        resp = MessagingResponse()
-        resp.message("Please slow down. Try again in a minute.")
-        return str(resp)
+        from app.services.whatsapp_client import send_text
 
-    # Dispatch to background — Twilio 5-second rule
-    background_tasks.add_task(
-        process_message_safe,
-        sender,
-        Body.strip(),
-        MediaUrl0,
-        MediaContentType0,
-    )
+        await send_text(sender, "Please slow down. Try again in a minute.")
+        return {"status": "rate_limited"}
 
-    # Empty ack — Twilio requires 200 response within 5 seconds
-    resp = MessagingResponse()
-    return str(resp)
+    background_tasks.add_task(process_message_safe, sender, body)
+    return {"status": "received"}

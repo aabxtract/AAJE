@@ -1,59 +1,35 @@
-"""
-PII Scrubber - Removes Personal Identifiable Information before sending data to LLM.
-"""
-
+import copy
 import re
-import math
 
-def _round_money(value):
-    try:
-        val = float(value)
-        return round(val / 100) * 100
-    except (ValueError, TypeError):
-        return value
 
-def scrub(raw_context: dict) -> dict:
-    """
-    Scrubs PII from raw context according to strict rules.
-    """
-    scrubbed = {}
-    remove_keys = {"pin_hash", "mono_account_id", "squad_customer_id", "verified_bank_account", "verified_bank_code"}
-    
-    for k, v in raw_context.items():
-        if k in remove_keys:
-            continue
-            
-        if k == "full_name" and isinstance(v, str):
-            scrubbed[k] = v.split()[0] if v else ""
-            continue
-            
-        if "account_number" in k and isinstance(v, str) and len(v) >= 4:
-            scrubbed[k] = "***" + v[-4:]
-            continue
-            
-        if isinstance(v, str):
-            # Remove 10-digit or 11-digit numbers completely
-            if re.fullmatch(r'\d{10,11}', v.strip()):
-                continue
-                
-        # Round money to nearest hundred
-        if isinstance(v, (int, float)) and ("amount" in k or "balance" in k or "revenue" in k or "profit" in k):
-            scrubbed[k] = _round_money(v)
-            continue
-            
-        if isinstance(v, dict):
-            scrubbed[k] = scrub(v)
-        elif isinstance(v, list):
-            scrubbed[k] = [scrub(item) if isinstance(item, dict) else item for item in v]
-        else:
-            scrubbed[k] = v
-            
-    return scrubbed
+REMOVE_KEYS = {
+    "pin_hash",
+    "squad_customer_id",
+    "verified_bank_account",
+    "verified_bank_code",
+    "mono_account_id",
+}
 
-def scrub_transaction_list(transactions: list[dict]) -> list[dict]:
-    scrubbed_list = []
-    for tx in transactions:
-        s_tx = scrub(tx)
-        s_tx.pop("mono_transaction_id", None)
-        scrubbed_list.append(s_tx)
-    return scrubbed_list
+
+def _clean(value):
+    if isinstance(value, dict):
+        return scrub(value)
+    if isinstance(value, list):
+        return [_clean(item) for item in value]
+    if isinstance(value, str):
+        return re.sub(r"\b\d{10,11}\b", lambda m: f"***{m.group(0)[-4:]}", value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return round(float(value) / 100) * 100
+    return value
+
+
+def scrub(data: dict) -> dict:
+    cleaned = {}
+    for key, value in copy.deepcopy(data).items():
+        if key in REMOVE_KEYS:
+            continue
+        if key == "full_name" and isinstance(value, str):
+            cleaned[key] = value.split()[0] if value else ""
+            continue
+        cleaned[key] = _clean(value)
+    return cleaned

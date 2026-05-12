@@ -1,4 +1,4 @@
-from app.services.twilio_client import send_text
+from app.services.whatsapp_client import send_text
 from app.utils.frustration import detect_frustration
 from app.redis import save_session, get_session
 from app.database import AsyncSessionLocal
