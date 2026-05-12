@@ -1,7 +1,9 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
+
     app_env: str = "development"
 
     meta_app_id: str
@@ -31,10 +33,6 @@ class Settings(BaseSettings):
     groq_api_key: str
     admin_token: str
     secret_key: str
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 
 settings = Settings()

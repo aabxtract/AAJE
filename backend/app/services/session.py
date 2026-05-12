@@ -38,6 +38,19 @@ async def route_message(whatsapp_no: str, message: str):
         await handle_pin_input(whatsapp_no, message, session)
         return
 
+    pending_data = session.get("pending_data", {})
+    if pending_data.get("withdrawal_flow"):
+        from app.agents.withdrawal_agent import handle_withdrawal
+
+        await handle_withdrawal(whatsapp_no, message, session)
+        return
+
+    if pending_data.get("payment_flow"):
+        from app.agents.payment_agent import handle_payment
+
+        await handle_payment(whatsapp_no, message, session)
+        return
+
     from app.utils.frustration import detect_frustration
 
     if detect_frustration(message):
