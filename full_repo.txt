@@ -1,0 +1,2444 @@
+Folder PATH listing
+Volume serial number is D41A-40C9
+C:.
+�   .env.example
+�   .gitignore
+�   full_repo.txt
+�   structure.txt
+�   
++---.vscode
+�       settings.json
+�       
++---backend
+�   �   .gitignore
+�   �   requirements.txt
+�   �   scheduler.py
+�   �   
+�   +---app
+�   �   �   config.py
+�   �   �   database.py
+�   �   �   main.py
+�   �   �   redis.py
+�   �   �   __init__.py
+�   �   �   
+�   �   +---agents
+�   �   �       insight_agent.py
+�   �   �       onboarding_agent.py
+�   �   �       payment_agent.py
+�   �   �       support_agent.py
+�   �   �       vault_agent.py
+�   �   �       withdrawal_agent.py
+�   �   �       __init__.py
+�   �   �       
+�   �   +---intelligence
+�   �   �       llm.py
+�   �   �       pii_scrubber.py
+�   �   �       refinery.py
+�   �   �       __init__.py
+�   �   �       
+�   �   +---models
+�   �   �       income_stream.py
+�   �   �       score.py
+�   �   �       transaction.py
+�   �   �       user.py
+�   �   �       vault.py
+�   �   �       __init__.py
+�   �   �       
+�   �   +---routes
+�   �   �       admin.py
+�   �   �       intelligence_api.py
+�   �   �       mono_webhook.py
+�   �   �       squad_webhook.py
+�   �   �       webhook.py
+�   �   �       __init__.py
+�   �   �       
+�   �   +---services
+�   �   �       mono.py
+�   �   �       ocr.py
+�   �   �       pin.py
+�   �   �       refinery.py
+�   �   �       session.py
+�   �   �       squad.py
+�   �   �       transcription.py
+�   �   �       whatsapp_client.py
+�   �   �       __init__.py
+�   �   �       
+�   �   +---utils
+�   �           constants.py
+�   �           formatters.py
+�   �           frustration.py
+�   �           message_parser.py
+�   �           phrases.py
+�   �           pii_scrubber.py
+�   �           __init__.py
+�   �           
+�   +---migrations
+�           001_init.sql
+�           
++---dashboard
+    �   index.html
+    �   
+    +---assets
+    �       app.js
+    �       style.css
+    �       
+    +---pages
+            analytics.html
+            escalations.html
+            transactions.html
+            users.html
+            
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\scheduler.py =====
+
+def start_scheduler():
+    return None
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\config.py =====
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    app_env: str = "development"
+
+    meta_app_id: str
+    meta_app_secret: str
+    meta_phone_number_id: str
+    meta_whatsapp_token: str
+    meta_webhook_verify_token: str
+    meta_graph_api_version: str = "v23.0"
+
+    squad_secret_key: str
+    squad_base_url: str = "https://sandbox-api-d.squadco.com"
+    squad_revenue_account: str
+    squad_revenue_bank_code: str
+
+    mono_public_key: str
+    mono_secret_key: str
+    mono_webhook_secret: str
+    mono_base_url: str = "https://sandbox.mono.co"
+
+    supabase_url: str
+    supabase_key: str
+    database_url: str
+
+    upstash_redis_rest_url: str
+    upstash_redis_rest_token: str
+
+    groq_api_key: str
+    admin_token: str
+    secret_key: str
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
+
+
+settings = Settings()
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\database.py =====
+
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    AsyncSession,
+    async_sessionmaker,
+)
+from sqlalchemy.orm import DeclarativeBase
+from app.config import settings
+
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    pool_size=10,
+    max_overflow=20,
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\main.py =====
+
+from fastapi import FastAPI
+
+from app.routes.admin import router as admin_router
+from app.routes.intelligence_api import router as intelligence_router
+from app.routes.mono_webhook import router as mono_router
+from app.routes.squad_webhook import router as squad_router
+from app.routes.webhook import router as whatsapp_router
+
+
+app = FastAPI(title="AAJE", version="1.0.0")
+
+app.include_router(whatsapp_router)
+app.include_router(squad_router)
+app.include_router(mono_router)
+app.include_router(intelligence_router)
+app.include_router(admin_router, prefix="/admin")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "environment": "sandbox"}
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\redis.py =====
+
+"""
+Upstash Redis client — uses the upstash-redis SDK with async support.
+All keys are namespaced and TTL-managed so expired sessions self-delete.
+"""
+import json
+from upstash_redis.asyncio import Redis
+from app.config import settings
+
+redis = Redis(
+    url=settings.upstash_redis_rest_url,
+    token=settings.upstash_redis_rest_token,
+)
+
+
+async def get_session(whatsapp_no: str) -> dict:
+    """Get session from Redis. Returns default new session if not found."""
+    data = await redis.get(f"session:{whatsapp_no}")
+    if data:
+        return json.loads(data) if isinstance(data, str) else data
+    return {
+        "stage": "NEW",
+        "agent": None,
+        "language": None,
+        "pending_data": {},
+        "awaiting_pin": False,
+        "pin_action": None,
+        "step": 0,
+        "onboarding_complete": False,
+        "pin_attempts": 0,
+    }
+
+
+async def save_session(whatsapp_no: str, data: dict):
+    """Save session with 30-minute TTL."""
+    await redis.setex(
+        f"session:{whatsapp_no}",
+        1800,
+        json.dumps(data),
+    )
+
+
+async def clear_session(whatsapp_no: str):
+    await redis.delete(f"session:{whatsapp_no}")
+
+
+async def increment_pin_attempts(whatsapp_no: str) -> int:
+    """Increment PIN attempt counter. 10-minute TTL window."""
+    key = f"pin_attempts:{whatsapp_no}"
+    attempts = await redis.incr(key)
+    if attempts == 1:
+        await redis.expire(key, 600)
+    return attempts
+
+
+async def clear_pin_attempts(whatsapp_no: str):
+    await redis.delete(f"pin_attempts:{whatsapp_no}")
+
+
+async def set_mono_pending(whatsapp_no: str):
+    """Flag that this trader is in the Mono Connect flow."""
+    await redis.setex(f"mono_pending:{whatsapp_no}", 1800, "1")
+
+
+async def clear_mono_pending(whatsapp_no: str):
+    await redis.delete(f"mono_pending:{whatsapp_no}")
+
+
+async def is_mono_pending(whatsapp_no: str) -> bool:
+    result = await redis.get(f"mono_pending:{whatsapp_no}")
+    return result is not None
+
+
+async def set_rate_limit(whatsapp_no: str) -> int:
+    """Rate limit counter. 60-second window. Returns current count."""
+    key = f"rate_limit:{whatsapp_no}"
+    count = await redis.incr(key)
+    if count == 1:
+        await redis.expire(key, 60)
+    return count
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\__init__.py =====
+
+# AAJE Backend App
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\agents\insight_agent.py =====
+
+async def handle_summary(whatsapp_no: str, message: str, session: dict):
+    from app.services.whatsapp_client import send_text
+    await send_text(whatsapp_no, "Summary and insights features will be available soon.")
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\agents\onboarding_agent.py =====
+
+import uuid
+
+from sqlalchemy import insert
+
+from app.database import AsyncSessionLocal
+from app.models.income_stream import IncomeStream
+from app.models.score import Score
+from app.models.user import User
+from app.models.vault import Vault
+from app.redis import save_session
+from app.services.mono import BANK_CODES, lookup_account
+from app.services.pin import hash_pin, is_valid_pin, verify_pin
+from app.services.squad import create_virtual_account, register_customer
+from app.services.whatsapp_client import send_text
+from app.utils.formatters import names_match, split_full_name
+
+LANGUAGE_MAP = {
+    "1": "yo", "yoruba": "yo",
+    "2": "ig", "igbo": "ig",
+    "3": "ha", "hausa": "ha",
+    "4": "pcm", "pidgin": "pcm",
+    "5": "en", "english": "en",
+}
+
+BUSINESS_TYPES = {
+    "1": "Market Trader", "market trader": "Market Trader",
+    "2": "Food Vendor", "food vendor": "Food Vendor",
+    "3": "Shop Owner", "shop owner": "Shop Owner",
+    "4": "Artisan", "artisan": "Artisan",
+    "5": "Other", "other": "Other",
+}
+
+
+async def handle_onboarding(whatsapp_no: str, message: str, session: dict):
+    stage = session.get("stage", "NEW")
+    session.setdefault("pending_data", {})
+
+    handlers = {
+        "NEW": _new,
+        "SELECTING_LANGUAGE": _language,
+        "COLLECTING_NAME": _name,
+        "COLLECTING_LOCATION": _location,
+        "COLLECTING_BUSINESS_TYPE": _business_type,
+        "COLLECTING_STREAM_COUNT": _stream_count,
+        "COLLECTING_STREAM_NAMES": _stream_names,
+        "COLLECTING_ACCOUNT": _account,
+        "COLLECTING_BANK": _bank,
+        "CREATING_PIN": _create_pin,
+        "CONFIRMING_PIN": _confirm_pin,
+        "CREATING_ACCOUNTS": _creating_accounts,
+        "CONFIGURING_SPLITS": _configuring_splits,
+        "POLICY_ACCEPTANCE": _policy_acceptance,
+    }
+    await handlers.get(stage, _new)(whatsapp_no, message, session)
+
+
+async def _new(whatsapp_no: str, _message: str, session: dict):
+    session["stage"] = "SELECTING_LANGUAGE"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "Welcome to AAJE. Choose your language:\n1. Yoruba\n2. Igbo\n3. Hausa\n4. Pidgin\n5. English")
+
+
+async def _language(whatsapp_no: str, message: str, session: dict):
+    language = LANGUAGE_MAP.get(message.lower().strip())
+    if not language:
+        await send_text(whatsapp_no, "Please reply with 1, 2, 3, 4, or 5.")
+        return
+    session["language"] = language
+    session["stage"] = "COLLECTING_NAME"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "What is your full name?")
+
+
+async def _name(whatsapp_no: str, message: str, session: dict):
+    if len(message.strip()) < 2:
+        await send_text(whatsapp_no, "Please enter your full name.")
+        return
+    session["pending_data"]["full_name"] = message.strip()
+    session["stage"] = "COLLECTING_LOCATION"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "What market or town do you trade in?")
+
+
+async def _location(whatsapp_no: str, message: str, session: dict):
+    session["pending_data"]["location"] = message.strip()
+    session["stage"] = "COLLECTING_BUSINESS_TYPE"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "What type of business do you run?\n1. Market Trader\n2. Food Vendor\n3. Shop Owner\n4. Artisan\n5. Other")
+
+
+async def _business_type(whatsapp_no: str, message: str, session: dict):
+    business_type = BUSINESS_TYPES.get(message.lower().strip())
+    if not business_type:
+        await send_text(whatsapp_no, "Please reply with 1, 2, 3, 4, or 5.")
+        return
+    session["pending_data"]["business_type"] = business_type
+    session["stage"] = "COLLECTING_STREAM_COUNT"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "Do you run more than one business? Reply 1 for Yes, 2 for No.")
+
+
+async def _stream_count(whatsapp_no: str, message: str, session: dict):
+    choice = message.strip().lower()
+    if choice in {"1", "yes", "y"}:
+        session["pending_data"]["stream_count"] = 2
+        session["pending_data"]["streams"] = []
+        session["stage"] = "COLLECTING_STREAM_NAMES"
+        prompt = "Name your first business."
+    elif choice in {"2", "no", "n"}:
+        session["pending_data"]["stream_count"] = 1
+        session["pending_data"]["streams"] = []
+        session["stage"] = "COLLECTING_STREAM_NAMES"
+        prompt = "What do you call your business? Give it a name you use yourself."
+    else:
+        await send_text(whatsapp_no, "Reply 1 for Yes, 2 for No.")
+        return
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, prompt)
+
+
+async def _stream_names(whatsapp_no: str, message: str, session: dict):
+    data = session["pending_data"]
+    streams = data.setdefault("streams", [])
+    streams.append({"stream_name": message.strip(), "is_savings": False, "is_emergency": False})
+    if len(streams) < int(data.get("stream_count", 1)):
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, f"Name business {len(streams) + 1}.")
+        return
+    session["stage"] = "COLLECTING_ACCOUNT"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "Enter the account number where customers send you money.")
+
+
+async def _account(whatsapp_no: str, message: str, session: dict):
+    account_number = message.replace(" ", "").strip()
+    if not account_number.isdigit() or len(account_number) != 10:
+        await send_text(whatsapp_no, "Enter a valid 10-digit account number.")
+        return
+    session["pending_data"]["account_number"] = account_number
+    session["stage"] = "COLLECTING_BANK"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "What bank is this account with? e.g. GTBank, Access, Opay, Kuda")
+
+
+async def _bank(whatsapp_no: str, message: str, session: dict):
+    bank_code = BANK_CODES.get(message.lower().strip())
+    if not bank_code:
+        await send_text(whatsapp_no, "I do not recognize that bank. Try GTBank, Access, Zenith, Opay, Kuda, or Moniepoint.")
+        return
+    data = session["pending_data"]
+    try:
+        account = await lookup_account(data["account_number"], bank_code)
+    except Exception:
+        await send_text(whatsapp_no, "I could not verify that account right now. Please try again.")
+        return
+    verified_name = account.get("account_name") or account.get("name", "")
+    if not names_match(data["full_name"], verified_name):
+        attempts = session.get("identity_attempts", 0) + 1
+        session["identity_attempts"] = attempts
+        if attempts >= 3:
+            session["stage"] = "ESCALATED"
+            await save_session(whatsapp_no, session)
+            await send_text(whatsapp_no, "We could not verify your identity after 3 attempts. A team member will contact you.")
+            return
+        session["stage"] = "COLLECTING_ACCOUNT"
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, "The account name does not match. Enter the account number again.")
+        return
+    first, last = split_full_name(data["full_name"])
+    customer = await register_customer(first, last, whatsapp_no, data["account_number"], bank_code)
+    data["verified_bank_account"] = data["account_number"]
+    data["verified_bank_code"] = bank_code
+    data["verified_bank_name"] = verified_name
+    data["squad_customer_id"] = customer.get("customer_id") or customer.get("id") or customer.get("customer_identifier")
+    session["stage"] = "CREATING_PIN"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, f"Identity confirmed: {verified_name}. Now create a 4-digit PIN.")
+
+
+async def _create_pin(whatsapp_no: str, message: str, session: dict):
+    pin = message.strip()
+    if not is_valid_pin(pin):
+        await send_text(whatsapp_no, "PIN must be exactly 4 digits and not obvious like 1234 or 1111.")
+        return
+    session["pending_data"]["pin_hash"] = hash_pin(pin)
+    session["stage"] = "CONFIRMING_PIN"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "Confirm your PIN. Enter it again.")
+
+
+async def _confirm_pin(whatsapp_no: str, message: str, session: dict):
+    if not verify_pin(message.strip(), session["pending_data"].get("pin_hash", "")):
+        session["pending_data"].pop("pin_hash", None)
+        session["stage"] = "CREATING_PIN"
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, "PINs do not match. Create your 4-digit PIN again.")
+        return
+    session["stage"] = "CREATING_ACCOUNTS"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "PIN set. I am creating your Squad accounts now.")
+    await _creating_accounts(whatsapp_no, message, session)
+
+
+async def _creating_accounts(whatsapp_no: str, _message: str, session: dict):
+    data = session["pending_data"]
+    for stream in data["streams"]:
+        account = await create_virtual_account(data["squad_customer_id"], stream["stream_name"])
+        stream["squad_account_number"] = account.get("account_number") or account.get("virtual_account_number")
+        stream["squad_account_id"] = account.get("account_id") or account.get("id")
+    session["stage"] = "CONFIGURING_SPLITS"
+    session["pending_data"]["split_index"] = 0
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, f"What percentage should go to {data['streams'][0]['stream_name']}?")
+
+
+async def _configuring_splits(whatsapp_no: str, message: str, session: dict):
+    data = session["pending_data"]
+    try:
+        percentage = float(message.strip().replace("%", ""))
+    except ValueError:
+        await send_text(whatsapp_no, "Enter the percentage as a number.")
+        return
+    index = int(data.get("split_index", 0))
+    data["streams"][index]["split_percentage"] = percentage
+    index += 1
+    data["split_index"] = index
+    if index < len(data["streams"]):
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, f"What percentage should go to {data['streams'][index]['stream_name']}?")
+        return
+    total = sum(float(stream.get("split_percentage", 0)) for stream in data["streams"])
+    if round(total, 2) != 100:
+        data["split_index"] = 0
+        for stream in data["streams"]:
+            stream.pop("split_percentage", None)
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, f"Those splits add up to {total}%. They must add up to 100%. Start again with {data['streams'][0]['stream_name']}.")
+        return
+    session["stage"] = "POLICY_ACCEPTANCE"
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, "Policy summary: AAJE creates Squad accounts, splits incoming money by your percentages, and withdrawals only go to your verified account. Reply I Accept to continue.")
+
+
+async def _policy_acceptance(whatsapp_no: str, message: str, session: dict):
+    if message.lower().strip() not in {"i accept", "accept", "yes", "1"}:
+        await send_text(whatsapp_no, "Reply I Accept when you are ready.")
+        return
+    data = session["pending_data"]
+    user_id = uuid.uuid4()
+    async with AsyncSessionLocal() as db:
+        await db.execute(insert(User).values(
+            id=user_id,
+            whatsapp_no=whatsapp_no,
+            full_name=data["full_name"],
+            location=data["location"],
+            preferred_language=session.get("language", "en"),
+            pin_hash=data["pin_hash"],
+            verified_bank_account=data["verified_bank_account"],
+            verified_bank_code=data["verified_bank_code"],
+            verified_bank_name=data["verified_bank_name"],
+            squad_customer_id=data["squad_customer_id"],
+            onboarding_complete=True,
+        ))
+        for stream in data["streams"]:
+            stream_id = uuid.uuid4()
+            await db.execute(insert(IncomeStream).values(
+                id=stream_id,
+                user_id=user_id,
+                stream_name=stream["stream_name"],
+                stream_type=data.get("business_type"),
+                squad_account_id=stream.get("squad_account_id"),
+                squad_account_number=stream.get("squad_account_number"),
+                split_percentage=stream.get("split_percentage"),
+                is_savings=stream.get("is_savings", False),
+                is_emergency=stream.get("is_emergency", False),
+            ))
+            await db.execute(insert(Vault).values(user_id=user_id, stream_id=stream_id))
+        await db.execute(insert(Score).values(user_id=user_id, credit_grade="D", recommended_loan_ceiling=0))
+        await db.commit()
+
+    session["onboarding_complete"] = True
+    session["stage"] = "ACTIVE"
+    session["pending_data"] = {}
+    await save_session(whatsapp_no, session)
+    first, _ = split_full_name(data["full_name"])
+    await send_text(whatsapp_no, f"Welcome to AAJE, {first}. Your accounts are ready. Send balance anytime to check your money.")
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\agents\payment_agent.py =====
+
+import uuid
+
+from sqlalchemy import insert, select
+
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.redis import save_session
+from app.services.squad import transfer
+from app.services.whatsapp_client import send_text
+from app.utils.formatters import format_naira
+
+
+async def handle_add_supplier(whatsapp_no: str, message: str, session: dict):
+    await handle_payment(whatsapp_no, message, session)
+
+
+async def handle_payment(whatsapp_no: str, message: str, session: dict):
+    parts = [part.strip() for part in message.split(",")]
+    if len(parts) >= 4:
+        name, bank_code, account_number, amount = parts[:4]
+        session.setdefault("pending_data", {})["payment"] = {
+            "supplier_name": name,
+            "bank_code": bank_code,
+            "account_number": account_number,
+            "amount": float(amount.replace(",", "")),
+        }
+        session["awaiting_pin"] = True
+        session["pin_action"] = "payment"
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, f"Pay {format_naira(float(amount.replace(',', '')))} to {name} ({account_number}). Enter your PIN to confirm.")
+        return
+    await send_text(whatsapp_no, "To pay a supplier, reply: Name, Bank Code, Account Number, Amount\nExample: Alhaji Musa, 058, 0123456789, 10000")
+
+
+async def execute_payment(whatsapp_no: str, session: dict, db):
+    result = await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))
+    user = result.scalar_one_or_none()
+    data = session.get("pending_data", {}).get("payment", {})
+    if not user or not data:
+        await send_text(whatsapp_no, "Payment details were not found.")
+        return
+
+    reference = f"PAY-{uuid.uuid4().hex[:16].upper()}"
+    amount = float(data["amount"])
+    await transfer(amount, data["bank_code"], data["account_number"], data["supplier_name"], "AAJE supplier payment", reference)
+    await db.execute(insert(Transaction).values(
+        user_id=user.id,
+        amount=amount,
+        type="debit",
+        narration=f"Supplier payment to {data['supplier_name']}",
+        category="payment",
+        source="payment",
+        squad_transaction_ref=reference,
+        timestamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        processed=True,
+    ))
+    await db.commit()
+    session.get("pending_data", {}).pop("payment", None)
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, f"Payment successful. Ref: {reference}")
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\agents\support_agent.py =====
+
+from app.services.whatsapp_client import send_text
+from app.utils.frustration import detect_frustration
+from app.redis import save_session, get_session
+from app.database import AsyncSessionLocal
+from sqlalchemy import select, insert
+from app.models.user import User
+from app.models.escalation import Escalation
+
+async def handle_support(
+    whatsapp_no: str,
+    message: str,
+    session: dict
+):
+    language = session.get("language", "en")
+
+    # Check for frustration
+    if detect_frustration(message, language):
+        await trigger_escalation(
+            whatsapp_no,
+            message,
+            "frustration",
+            session
+        )
+        return
+
+    # Check explicit human request
+    if any(word in message.lower() for word in [
+        "human", "person", "speak to someone", "real person"
+    ]):
+        await trigger_escalation(
+            whatsapp_no,
+            message,
+            "explicit_request",
+            session
+        )
+        return
+
+    # Tier-1 automated help
+    await send_text(
+        whatsapp_no,
+        "I can help you with:\n\n"
+        "1. Check vault balances — reply *balance*\n"
+        "2. Withdraw money — reply *withdraw*\n"
+        "3. Pay a supplier — reply *pay*\n"
+        "4. See your report — reply *summary*\n"
+        "5. Speak to a person — reply *human*\n\n"
+        "What do you need?"
+    )
+
+async def trigger_escalation(
+    whatsapp_no: str,
+    trigger_message: str,
+    trigger_type: str,
+    session: dict
+):
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(User).where(User.whatsapp_no == whatsapp_no)
+        )
+        user = result.scalar_one_or_none()
+
+        # Save conversation snapshot
+        snapshot = {
+            "session": session,
+            "last_message": trigger_message
+        }
+
+        if user:
+            await db.execute(
+                insert(Escalation).values(
+                    user_id=user.id,
+                    trigger_message=trigger_message,
+                    trigger_type=trigger_type,
+                    conversation_snapshot=snapshot,
+                    status="open"
+                )
+            )
+            await db.commit()
+
+    session["stage"] = "ESCALATED"
+    await save_session(whatsapp_no, session)
+
+    await send_text(
+        whatsapp_no,
+        "I'm connecting you to a team member right now. 🙏\n\n"
+        "Someone will respond within 30 minutes.\n"
+        "Please stay on this chat."
+    )
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\agents\vault_agent.py =====
+
+from sqlalchemy import desc, select
+
+from app.database import AsyncSessionLocal
+from app.intelligence.llm import generate_insight, translate_message
+from app.intelligence.refinery import compute_score
+from app.models.income_stream import IncomeStream
+from app.models.score import Score
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.vault import Vault
+from app.services.whatsapp_client import send_text
+from app.utils.formatters import format_naira
+from app.utils.pii_scrubber import scrub
+
+
+async def _user_for_whatsapp(db, whatsapp_no: str) -> User | None:
+    result = await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))
+    return result.scalar_one_or_none()
+
+
+async def handle_balance_check(whatsapp_no: str, session: dict):
+    async with AsyncSessionLocal() as db:
+        user = await _user_for_whatsapp(db, whatsapp_no)
+        if not user:
+            await send_text(whatsapp_no, "I could not find your AAJE account.")
+            return
+        result = await db.execute(
+            select(IncomeStream, Vault)
+            .join(Vault, Vault.stream_id == IncomeStream.id)
+            .where(IncomeStream.user_id == user.id)
+        )
+        rows = result.all()
+
+    if not rows:
+        message = "No accounts found yet."
+    else:
+        lines = ["Your AAJE balances:"]
+        for index, (stream, vault) in enumerate(rows, start=1):
+            lines.append(f"{index}. {stream.stream_name}: {format_naira(vault.current_balance or 0)}")
+        message = "\n".join(lines)
+
+    message = await translate_message(message, session.get("language", "en"))
+    await send_text(whatsapp_no, message)
+
+
+async def handle_summary(whatsapp_no: str, session: dict):
+    async with AsyncSessionLocal() as db:
+        user = await _user_for_whatsapp(db, whatsapp_no)
+        if not user:
+            await send_text(whatsapp_no, "I could not find your AAJE account.")
+            return
+        score = await compute_score(str(user.id), db)
+        tx_result = await db.execute(
+            select(Transaction)
+            .where(Transaction.user_id == user.id)
+            .order_by(desc(Transaction.timestamp))
+            .limit(30)
+        )
+        transactions = tx_result.scalars().all()
+
+    context = scrub({
+        "full_name": user.full_name,
+        "score": score,
+        "transactions": [
+            {"amount": float(tx.amount), "type": tx.type, "category": tx.category}
+            for tx in transactions
+        ],
+    })
+    insight = await generate_insight(context)
+    insight = await translate_message(insight, session.get("language", "en"))
+    await send_text(whatsapp_no, insight)
+
+
+async def handle_score(whatsapp_no: str, session: dict):
+    async with AsyncSessionLocal() as db:
+        user = await _user_for_whatsapp(db, whatsapp_no)
+        if not user:
+            await send_text(whatsapp_no, "I could not find your AAJE account.")
+            return
+        result = await db.execute(select(Score).where(Score.user_id == user.id))
+        score = result.scalar_one_or_none()
+
+    if not score:
+        message = "Your score is not ready yet. Keep receiving verified payments to build it."
+    else:
+        message = (
+            f"Your AAJE score is {score.trader_score:.1f}, grade {score.credit_grade}. "
+            f"Suggested credit threshold: {format_naira(score.recommended_loan_ceiling or 0)}."
+        )
+    message = await translate_message(message, session.get("language", "en"))
+    await send_text(whatsapp_no, message)
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\agents\withdrawal_agent.py =====
+
+import uuid
+
+from sqlalchemy import insert, select
+
+from app.models.income_stream import IncomeStream
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.vault import Vault
+from app.redis import save_session
+from app.services.squad import transfer
+from app.services.whatsapp_client import send_text
+from app.utils.formatters import format_naira
+
+
+async def _load_user_streams(db, whatsapp_no: str):
+    user_result = await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        return None, []
+    stream_result = await db.execute(
+        select(IncomeStream, Vault)
+        .join(Vault, Vault.stream_id == IncomeStream.id)
+        .where(IncomeStream.user_id == user.id)
+    )
+    return user, stream_result.all()
+
+
+async def handle_withdrawal(whatsapp_no: str, message: str, session: dict):
+    from app.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        user, rows = await _load_user_streams(db, whatsapp_no)
+    if not user:
+        await send_text(whatsapp_no, "I could not find your AAJE account.")
+        return
+
+    parts = message.replace(",", "").split()
+    if len(parts) >= 2 and parts[0].isdigit():
+        index = int(parts[0]) - 1
+        amount = float(parts[1])
+        if index < 0 or index >= len(rows):
+            await send_text(whatsapp_no, "That account number is not on your list.")
+            return
+        stream, vault = rows[index]
+        session.setdefault("pending_data", {})["withdrawal"] = {
+            "stream_id": str(stream.id),
+            "stream_name": stream.stream_name,
+            "amount": amount,
+        }
+        session["awaiting_pin"] = True
+        session["pin_action"] = "withdrawal"
+        await save_session(whatsapp_no, session)
+        await send_text(
+            whatsapp_no,
+            f"Withdraw {format_naira(amount)} from {stream.stream_name} to your {user.verified_bank_name} account ending {user.verified_bank_account[-4:]}. Enter your PIN to confirm.",
+        )
+        return
+
+    lines = ["Which account and how much? Reply like: 1 5000"]
+    for index, (stream, vault) in enumerate(rows, start=1):
+        lines.append(f"{index}. {stream.stream_name}: {format_naira(vault.current_balance or 0)}")
+    await send_text(whatsapp_no, "\n".join(lines))
+
+
+async def execute_withdrawal(whatsapp_no: str, session: dict, db):
+    user, rows = await _load_user_streams(db, whatsapp_no)
+    data = session.get("pending_data", {}).get("withdrawal", {})
+    stream_id = data.get("stream_id")
+    amount = float(data.get("amount", 0))
+    match = next(((s, v) for s, v in rows if str(s.id) == stream_id), None)
+    if not user or not match:
+        await send_text(whatsapp_no, "Withdrawal details were not found.")
+        return
+    stream, vault = match
+    if float(vault.current_balance or 0) < amount:
+        await send_text(whatsapp_no, "Insufficient balance for this withdrawal.")
+        return
+
+    reference = f"WD-{uuid.uuid4().hex[:16].upper()}"
+    await transfer(amount, user.verified_bank_code, user.verified_bank_account, user.verified_bank_name or user.full_name, "AAJE withdrawal", reference)
+    vault.current_balance = float(vault.current_balance or 0) - amount
+    vault.total_withdrawn = float(vault.total_withdrawn or 0) + amount
+    await db.execute(insert(Transaction).values(
+        user_id=user.id,
+        stream_id=stream.id,
+        amount=amount,
+        type="debit",
+        narration="AAJE withdrawal",
+        category="withdrawal",
+        source="withdrawal",
+        squad_transaction_ref=reference,
+        timestamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        processed=True,
+    ))
+    await db.commit()
+    session.get("pending_data", {}).pop("withdrawal", None)
+    await save_session(whatsapp_no, session)
+    await send_text(whatsapp_no, f"Withdrawal complete. Ref: {reference}")
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\agents\__init__.py =====
+
+# Agents package
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\intelligence\llm.py =====
+
+import logging
+
+from groq import AsyncGroq
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+client = AsyncGroq(api_key=settings.groq_api_key)
+MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
+
+async def categorize_transaction(narration: str, stream_names: list[str]) -> str:
+    response = await client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a financial categorization engine for a Nigerian trader. "
+                    "Given this payment narration and the trader's business names, return only "
+                    "the business name that this payment most likely belongs to. If unclear, "
+                    "return the first business name. Return only the business name, nothing else."
+                ),
+            },
+            {"role": "user", "content": f"Narration: {narration}. Business names: {stream_names}"},
+        ],
+        temperature=0,
+        max_tokens=50,
+    )
+    selected = response.choices[0].message.content.strip()
+    return selected if selected in stream_names else stream_names[0]
+
+
+async def translate_message(text: str, language: str) -> str:
+    if language == "en":
+        return text
+    language_map = {
+        "yo": ("Yoruba", "respectful warm tone"),
+        "ig": ("Igbo", "growth-focused tone"),
+        "ha": ("Hausa", "community trust tone"),
+        "pcm": ("Nigerian Pidgin", "casual friendly tone"),
+    }
+    target = language_map.get(language)
+    if not target:
+        return text
+    language_name, tone = target
+    try:
+        response = await client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"Translate into {language_name}. Use a {tone}. "
+                        "For non-English languages, do not include English in the output. "
+                        "Return only the translated message."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0.2,
+            max_tokens=300,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        logger.exception("Translation failed for language %s", language)
+        return text
+
+
+async def generate_insight(scrubbed_context: dict) -> str:
+    response = await client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a financial advisor for a Nigerian market trader. "
+                    "Be direct and specific. Maximum 2 sentences. Use only the numbers provided. "
+                    "End with one concrete action."
+                ),
+            },
+            {"role": "user", "content": str(scrubbed_context)},
+        ],
+        temperature=0.3,
+        max_tokens=160,
+    )
+    return response.choices[0].message.content.strip()
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\intelligence\pii_scrubber.py =====
+
+from app.utils.pii_scrubber import scrub
+
+__all__ = ["scrub"]
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\intelligence\refinery.py =====
+
+from datetime import datetime, timezone
+from decimal import Decimal
+
+import pandas as pd
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+
+from app.models.income_stream import IncomeStream
+from app.models.score import Score
+from app.models.transaction import Transaction
+from app.models.user import User
+
+
+GRADE_CEILINGS = {
+    "A+": Decimal("500000"),
+    "A": Decimal("350000"),
+    "B+": Decimal("200000"),
+    "B": Decimal("150000"),
+    "C+": Decimal("75000"),
+    "C": Decimal("30000"),
+    "D": Decimal("0"),
+}
+
+
+def _grade(score: float) -> str:
+    if score >= 91:
+        return "A+"
+    if score >= 81:
+        return "A"
+    if score >= 71:
+        return "B+"
+    if score >= 61:
+        return "B"
+    if score >= 51:
+        return "C+"
+    if score >= 41:
+        return "C"
+    return "D"
+
+
+async def compute_score(user_id: str, db) -> dict:
+    user = await db.get(User, user_id)
+    if not user:
+        raise ValueError("User not found")
+
+    tx_result = await db.execute(select(Transaction).where(Transaction.user_id == user_id))
+    transactions = tx_result.scalars().all()
+
+    now = datetime.now(timezone.utc)
+    created_at = user.created_at or now
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    tenure_days = max((now - created_at).days, 1)
+
+    if not transactions:
+        scores = {
+            "consistency_score": 0.0,
+            "volume_score": 0.0,
+            "savings_score": 0.0,
+            "tenure_score": round(min(tenure_days / 90 * 25, 25), 1),
+        }
+    else:
+        df = pd.DataFrame([
+            {
+                "amount": float(tx.amount),
+                "type": tx.type,
+                "timestamp": tx.timestamp,
+                "stream_id": str(tx.stream_id) if tx.stream_id else None,
+            }
+            for tx in transactions
+        ])
+        credits = df[df["type"] == "credit"].copy()
+        if credits.empty:
+            scores = {"consistency_score": 0.0, "volume_score": 0.0, "savings_score": 0.0}
+        else:
+            credits["date"] = pd.to_datetime(credits["timestamp"]).dt.date
+            active_days = credits["date"].nunique()
+            total_credit = credits["amount"].sum()
+            avg_daily_credit = total_credit / tenure_days
+
+            stream_result = await db.execute(
+                select(IncomeStream).where(IncomeStream.user_id == user_id)
+            )
+            saving_stream_ids = {
+                str(stream.id)
+                for stream in stream_result.scalars().all()
+                if stream.is_savings or stream.is_emergency
+            }
+            savings_credit = credits[credits["stream_id"].isin(saving_stream_ids)]["amount"].sum()
+            savings_ratio = savings_credit / total_credit if total_credit else 0
+
+            scores = {
+                "consistency_score": round(min(active_days / tenure_days * 25, 25), 1),
+                "volume_score": round(min(avg_daily_credit / 50000 * 25, 25), 1),
+                "savings_score": round(min(savings_ratio * 100, 25), 1),
+            }
+
+        scores["tenure_score"] = round(min(tenure_days / 90 * 25, 25), 1)
+
+    trader_score = round(sum(scores.values()), 1)
+    credit_grade = _grade(trader_score)
+    result = {
+        "trader_score": trader_score,
+        "credit_grade": credit_grade,
+        "recommended_loan_ceiling": GRADE_CEILINGS[credit_grade],
+        **scores,
+    }
+
+    statement = insert(Score).values(user_id=user_id, **result)
+    statement = statement.on_conflict_do_update(
+        index_elements=[Score.user_id],
+        set_={**result, "computed_at": now},
+    )
+    await db.execute(statement)
+    await db.commit()
+    return result
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\intelligence\__init__.py =====
+
+
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\models\income_stream.py =====
+
+import uuid
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Numeric, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
+
+from app.database import Base
+
+
+class IncomeStream(Base):
+    __tablename__ = "income_streams"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    stream_name = Column(String(100), nullable=False)
+    stream_type = Column(String(50))
+    squad_account_id = Column(String(100))
+    squad_account_number = Column(String(20))
+    split_percentage = Column(Numeric(5, 2))
+    is_savings = Column(Boolean, default=False)
+    is_emergency = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\models\score.py =====
+
+import uuid
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Numeric, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
+
+from app.database import Base
+
+
+class Score(Base):
+    __tablename__ = "scores"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    trader_score = Column(Float, default=0)
+    credit_grade = Column(String(5))
+    consistency_score = Column(Float, default=0)
+    volume_score = Column(Float, default=0)
+    savings_score = Column(Float, default=0)
+    tenure_score = Column(Float, default=0)
+    recommended_loan_ceiling = Column(Numeric(14, 2))
+    computed_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\models\transaction.py =====
+
+import uuid
+
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
+
+from app.database import Base
+
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+    __table_args__ = (
+        CheckConstraint("type IN ('credit', 'debit')", name="transactions_type_check"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    stream_id = Column(UUID(as_uuid=True), ForeignKey("income_streams.id"), nullable=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    type = Column(String(10))
+    narration = Column(Text)
+    category = Column(String(50))
+    source = Column(String(50))
+    squad_transaction_ref = Column(String(100), unique=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
+    processed = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\models\user.py =====
+
+import uuid
+
+from sqlalchemy import Boolean, Column, DateTime, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
+
+from app.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    whatsapp_no = Column(String(20), unique=True, nullable=False)
+    full_name = Column(String(100))
+    location = Column(String(100))
+    preferred_language = Column(String(10), default="en")
+    pin_hash = Column(String(255))
+    verified_bank_account = Column(String(20))
+    verified_bank_code = Column(String(10))
+    verified_bank_name = Column(String(100))
+    squad_customer_id = Column(String(100))
+    mono_account_id = Column(String(100))
+    onboarding_complete = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\models\vault.py =====
+
+import uuid
+
+from sqlalchemy import Column, DateTime, ForeignKey, Numeric
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
+
+from app.database import Base
+
+
+class Vault(Base):
+    __tablename__ = "vaults"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    stream_id = Column(UUID(as_uuid=True), ForeignKey("income_streams.id"), unique=True)
+    current_balance = Column(Numeric(12, 2), default=0)
+    total_deposited = Column(Numeric(12, 2), default=0)
+    total_withdrawn = Column(Numeric(12, 2), default=0)
+    last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\models\__init__.py =====
+
+from app.models.income_stream import IncomeStream
+from app.models.score import Score
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.vault import Vault
+
+__all__ = ["User", "IncomeStream", "Transaction", "Vault", "Score"]
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\routes\admin.py =====
+
+"""
+Admin dashboard API endpoints.
+All routes require a valid bearer token matching ADMIN_TOKEN in .env.
+"""
+from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.config import settings
+
+router = APIRouter()
+_bearer = HTTPBearer()
+
+
+def _require_admin(credentials: HTTPAuthorizationCredentials = Security(_bearer)):
+    if credentials.credentials != settings.admin_token:
+        raise HTTPException(status_code=403, detail="Invalid admin token")
+    return True
+
+
+@router.get("/stats", dependencies=[Depends(_require_admin)])
+async def get_stats():
+    """High-level platform stats for dashboard home."""
+    # TODO: query Postgres for live counts
+    return {
+        "total_traders": 0,
+        "active_today": 0,
+        "transactions_today": 0,
+        "total_vault_balance": 0,
+    }
+
+
+@router.get("/users", dependencies=[Depends(_require_admin)])
+async def list_users(limit: int = 50, offset: int = 0):
+    """Paginated trader list."""
+    # TODO: implement
+    return {"users": [], "total": 0}
+
+
+@router.get("/transactions", dependencies=[Depends(_require_admin)])
+async def list_transactions(limit: int = 50, offset: int = 0):
+    """Paginated transaction list."""
+    # TODO: implement
+    return {"transactions": [], "total": 0}
+
+
+@router.get("/escalations", dependencies=[Depends(_require_admin)])
+async def list_escalations():
+    """Open escalations for human review."""
+    # TODO: implement
+    return {"escalations": []}
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\routes\intelligence_api.py =====
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+
+from app.config import settings
+from app.database import AsyncSessionLocal
+from app.models.income_stream import IncomeStream
+from app.models.score import Score
+from app.models.user import User
+
+router = APIRouter()
+bearer = HTTPBearer()
+
+
+def _authorize(credentials: HTTPAuthorizationCredentials = Security(bearer)):
+    if credentials.credentials != settings.admin_token:
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+
+@router.get("/economic-score/{user_id}")
+async def economic_score(user_id: str, _: None = Security(_authorize)):
+    async with AsyncSessionLocal() as db:
+        user = await db.get(User, user_id)
+        if not user or not user.onboarding_complete:
+            raise HTTPException(status_code=404, detail="User not found")
+        score_result = await db.execute(select(Score).where(Score.user_id == user_id))
+        score = score_result.scalar_one_or_none()
+        if not score:
+            raise HTTPException(status_code=404, detail="Score not found")
+        stream_result = await db.execute(select(IncomeStream).where(IncomeStream.user_id == user_id))
+        active_streams = len(stream_result.scalars().all())
+
+    created_at = user.created_at or datetime.now(timezone.utc)
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    tenure_days = max((datetime.now(timezone.utc) - created_at).days, 0)
+    reliability = "high" if score.trader_score >= 70 else "medium" if score.trader_score >= 50 else "low"
+    return {
+        "trader_score": score.trader_score,
+        "credit_grade": score.credit_grade,
+        "transaction_consistency": round((score.consistency_score or 0) / 25, 2),
+        "estimated_income_reliability": reliability,
+        "suggested_credit_threshold": float(score.recommended_loan_ceiling or 0),
+        "active_streams": active_streams,
+        "data_source": "squad_verified",
+        "tenure_days": tenure_days,
+    }
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\routes\mono_webhook.py =====
+
+import logging
+
+from fastapi import APIRouter, Header, HTTPException, Request
+from sqlalchemy import select
+
+from app.config import settings
+from app.database import AsyncSessionLocal
+from app.models.user import User
+from app.redis import clear_mono_pending
+from app.services.whatsapp_client import send_text
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+@router.post("/webhook/mono")
+async def mono_webhook(request: Request, mono_webhook_secret: str = Header(default="", alias="mono-webhook-secret")):
+    if mono_webhook_secret != settings.mono_webhook_secret:
+        raise HTTPException(status_code=403, detail="Invalid Mono webhook secret")
+
+    event = await request.json()
+    event_type = event.get("event")
+    data = event.get("data", {})
+    logger.info("Mono event received: %s", event_type)
+
+    if event_type == "mono.events.account_connected":
+        reference = data.get("reference") or data.get("customer", {}).get("reference")
+        account_id = data.get("account", {}).get("_id") or data.get("account_id")
+        whatsapp_no = data.get("customer", {}).get("phone") or data.get("phone")
+        async with AsyncSessionLocal() as db:
+            user = None
+            if reference:
+                user = await db.get(User, reference)
+            if not user and whatsapp_no:
+                result = await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))
+                user = result.scalar_one_or_none()
+            if user and account_id:
+                user.mono_account_id = account_id
+                await db.commit()
+                await clear_mono_pending(user.whatsapp_no)
+                await send_text(user.whatsapp_no, "Your bank connection is confirmed. Return to WhatsApp to continue.")
+
+    return {"status": "received"}
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\routes\squad_webhook.py =====
+
+import hashlib
+import hmac
+import logging
+from datetime import datetime, timezone
+from decimal import Decimal
+
+from fastapi import APIRouter, HTTPException, Request
+from sqlalchemy import select
+
+from app.config import settings
+from app.database import AsyncSessionLocal
+from app.intelligence.llm import categorize_transaction, translate_message
+from app.intelligence.pii_scrubber import scrub
+from app.intelligence.refinery import compute_score
+from app.models.income_stream import IncomeStream
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.vault import Vault
+from app.services.squad import transfer
+from app.services.whatsapp_client import send_text
+from app.utils.formatters import format_naira
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+def _valid_signature(payload: bytes, signature: str) -> bool:
+    if not signature:
+        return False
+    expected = hmac.new(settings.squad_secret_key.encode(), payload, hashlib.sha512).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def _payload_value(payload: dict, *names, default=None):
+    for name in names:
+        if name in payload:
+            return payload[name]
+    data = payload.get("data", {})
+    for name in names:
+        if name in data:
+            return data[name]
+    return default
+
+
+@router.post("/webhook/squad")
+async def squad_webhook(request: Request):
+    body = await request.body()
+    signature = request.headers.get("x-squad-signature") or request.headers.get("squad-signature") or ""
+    if not signature or not _valid_signature(body, signature):
+        raise HTTPException(status_code=403, detail="Invalid Squad signature")
+
+    payload = await request.json()
+    reference = _payload_value(payload, "transaction_ref", "transaction_reference", "reference", "ref")
+    amount_kobo = _payload_value(payload, "amount", "transaction_amount", default=0)
+    account_number = _payload_value(payload, "virtual_account_number", "account_number", "recipient_account")
+    narration = _payload_value(payload, "narration", "remarks", "description", default="")
+    tx_type = str(_payload_value(payload, "type", "transaction_type", default="credit")).lower()
+
+    if not reference or not account_number:
+        logger.info("Squad webhook missing reference or account number: %s", payload)
+        return {"status": "ignored"}
+
+    async with AsyncSessionLocal() as db:
+        existing = await db.execute(select(Transaction).where(Transaction.squad_transaction_ref == reference))
+        if existing.scalar_one_or_none():
+            return {"status": "duplicate"}
+
+        stream_result = await db.execute(select(IncomeStream).where(IncomeStream.squad_account_number == str(account_number)))
+        inbound_stream = stream_result.scalar_one_or_none()
+        if not inbound_stream:
+            logger.info("No stream found for Squad account %s", account_number)
+            return {"status": "ignored"}
+
+        user = await db.get(User, inbound_stream.user_id)
+        streams_result = await db.execute(select(IncomeStream).where(IncomeStream.user_id == user.id))
+        streams = streams_result.scalars().all()
+
+        if "credit" not in tx_type or Decimal(str(amount_kobo)) <= 0:
+            return {"status": "ignored"}
+
+        amount = Decimal(str(amount_kobo)) / Decimal("100")
+        selected_name = await categorize_transaction(
+            scrub({"narration": narration, "full_name": user.full_name}).get("narration", narration),
+            [stream.stream_name for stream in streams],
+        )
+        categorized_stream = next((stream for stream in streams if stream.stream_name == selected_name), inbound_stream)
+
+        fee = Decimal("5")
+        split_base = max(amount - fee, Decimal("0"))
+        split_lines = []
+        for stream in streams:
+            split_amount = (split_base * Decimal(str(stream.split_percentage or 0)) / Decimal("100")).quantize(Decimal("0.01"))
+            if split_amount <= 0:
+                continue
+            split_ref = f"SPLIT-{reference}-{str(stream.id)[:8]}"
+            await transfer(float(split_amount), "000", stream.squad_account_number, stream.stream_name, "AAJE split", split_ref)
+            vault_result = await db.execute(select(Vault).where(Vault.stream_id == stream.id))
+            vault = vault_result.scalar_one_or_none()
+            if vault:
+                vault.current_balance = Decimal(vault.current_balance or 0) + split_amount
+                vault.total_deposited = Decimal(vault.total_deposited or 0) + split_amount
+            db.add(Transaction(
+                user_id=user.id,
+                stream_id=stream.id,
+                amount=split_amount,
+                type="credit",
+                narration=f"Split from {reference}",
+                category="split",
+                source="squad_split",
+                squad_transaction_ref=split_ref,
+                timestamp=datetime.now(timezone.utc),
+                processed=True,
+            ))
+            split_lines.append(f"{stream.stream_name}: {format_naira(float(split_amount))}")
+
+        if fee > 0:
+            await transfer(float(fee), settings.squad_revenue_bank_code, settings.squad_revenue_account, "AAJE Revenue", "AAJE fee", f"FEE-{reference}")
+
+        db.add(Transaction(
+            user_id=user.id,
+            stream_id=categorized_stream.id,
+            amount=amount,
+            type="credit",
+            narration=narration,
+            category="inbound",
+            source="squad",
+            squad_transaction_ref=reference,
+            timestamp=datetime.now(timezone.utc),
+            processed=True,
+        ))
+        await db.commit()
+        await compute_score(str(user.id), db)
+
+    message = f"{format_naira(float(amount))} received. Here's how it was split:\n" + "\n".join(split_lines)
+    message = await translate_message(message, user.preferred_language or "en")
+    await send_text(user.whatsapp_no, message)
+    return {"status": "processed"}
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\routes\webhook.py =====
+
+import hashlib
+import hmac
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
+
+from app.config import settings
+from app.redis import set_rate_limit
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+def _verify_meta_signature(payload: bytes, signature: str) -> bool:
+    if not signature.startswith("sha256="):
+        return False
+    expected = hmac.new(
+        settings.meta_app_secret.encode(),
+        payload,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(f"sha256={expected}", signature)
+
+
+async def process_message_safe(sender: str, message: str):
+    try:
+        from app.services.session import route_message
+
+        await route_message(sender, message)
+    except Exception:
+        logger.exception("Message processing failed for %s", sender)
+        try:
+            from app.services.whatsapp_client import send_text
+
+            await send_text(sender, "Something went wrong. Please try again in a moment.")
+        except Exception:
+            logger.exception("Failed to send fallback error message to %s", sender)
+
+
+@router.get("/webhook/whatsapp", response_class=PlainTextResponse)
+async def verify_whatsapp_webhook(
+    hub_mode: str = Query(alias="hub.mode"),
+    hub_challenge: str = Query(alias="hub.challenge"),
+    hub_verify_token: str = Query(alias="hub.verify_token"),
+):
+    if hub_mode == "subscribe" and hub_verify_token == settings.meta_webhook_verify_token:
+        return hub_challenge
+    raise HTTPException(status_code=403, detail="Invalid verify token")
+
+
+@router.post("/webhook/whatsapp")
+async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
+    payload = await request.body()
+    signature = request.headers.get("x-hub-signature-256", "")
+    if not _verify_meta_signature(payload, signature):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    data = await request.json()
+    value = (
+        data.get("entry", [{}])[0]
+        .get("changes", [{}])[0]
+        .get("value", {})
+    )
+    messages = value.get("messages") or []
+    if not messages:
+        return {"status": "ignored"}
+
+    message = messages[0]
+    sender = message.get("from")
+    message_type = message.get("type")
+    if not sender or message_type != "text":
+        return {"status": "ignored"}
+
+    body = (message.get("text") or {}).get("body", "").strip()
+    if not body:
+        return {"status": "ignored"}
+
+    count = await set_rate_limit(sender)
+    if count > 10:
+        from app.services.whatsapp_client import send_text
+
+        await send_text(sender, "Please slow down. Try again in a minute.")
+        return {"status": "rate_limited"}
+
+    background_tasks.add_task(process_message_safe, sender, body)
+    return {"status": "received"}
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\routes\__init__.py =====
+
+# Routes package
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\services\mono.py =====
+
+import httpx
+
+from app.config import settings
+
+BANK_CODES = {
+    "gtbank": "058", "gtb": "058", "guaranty trust": "058", "guaranty trust bank": "058",
+    "access": "044", "access bank": "044",
+    "zenith": "057", "zenith bank": "057",
+    "first bank": "011", "firstbank": "011", "fbn": "011",
+    "uba": "033", "united bank for africa": "033",
+    "union": "032", "union bank": "032",
+    "fidelity": "070", "fidelity bank": "070",
+    "sterling": "232", "sterling bank": "232",
+    "wema": "035", "wema bank": "035",
+    "kuda": "50211", "kuda bank": "50211",
+    "opay": "999992", "opera": "999992",
+    "palmpay": "999991", "palm pay": "999991",
+    "moniepoint": "50515", "monie point": "50515",
+}
+
+
+async def lookup_account(account_number: str, bank_code: str) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f"{settings.mono_base_url}/v1/accounts/resolve",
+            headers={
+                "mono-sec-key": settings.mono_secret_key,
+                "Content-Type": "application/json",
+            },
+            json={"account_number": account_number, "bank_code": bank_code},
+        )
+    response.raise_for_status()
+    return response.json().get("data", response.json())
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\services\ocr.py =====
+
+from app.services.whatsapp_client import send_text
+
+
+async def process_receipt(whatsapp_no: str, _media_url: str):
+    await send_text(whatsapp_no, "Receipt upload is not part of this MVP yet.")
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\services\pin.py =====
+
+from passlib.context import CryptContext
+
+from app.redis import clear_pin_attempts, increment_pin_attempts, save_session
+from app.services.whatsapp_client import send_text
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+
+INVALID_PINS = {
+    "1111", "2222", "3333", "4444", "5555", "6666", "7777", "8888",
+    "9999", "0000", "1234", "4321", "1212", "2580",
+}
+
+
+def hash_pin(pin: str) -> str:
+    return pwd_context.hash(pin)
+
+
+def verify_pin(pin: str, hashed: str) -> bool:
+    if not hashed:
+        return False
+    return pwd_context.verify(pin, hashed)
+
+
+def is_valid_pin(pin: str) -> bool:
+    return pin.isdigit() and len(pin) == 4 and pin not in INVALID_PINS
+
+
+async def handle_pin_input(whatsapp_no: str, pin_input: str, session: dict):
+    from sqlalchemy import select
+
+    from app.database import AsyncSessionLocal
+    from app.models.user import User
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))
+        user = result.scalar_one_or_none()
+        if not user:
+            await send_text(whatsapp_no, "User not found.")
+            return
+
+        if verify_pin(pin_input.strip(), user.pin_hash):
+            await clear_pin_attempts(whatsapp_no)
+            action = session.get("pin_action")
+            session["awaiting_pin"] = False
+            session["pin_action"] = None
+            await save_session(whatsapp_no, session)
+
+            if action == "withdrawal":
+                from app.agents.withdrawal_agent import execute_withdrawal
+
+                await execute_withdrawal(whatsapp_no, session, db)
+            elif action == "payment":
+                from app.agents.payment_agent import execute_payment
+
+                await execute_payment(whatsapp_no, session, db)
+            return
+
+        attempts = await increment_pin_attempts(whatsapp_no)
+        if attempts >= 3:
+            session["stage"] = "LOCKED"
+            await save_session(whatsapp_no, session)
+            await send_text(whatsapp_no, "Too many wrong PIN attempts. Your account is locked. A team member will contact you.")
+            return
+
+        await send_text(whatsapp_no, f"Wrong PIN. {3 - attempts} attempt(s) remaining.")
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\services\refinery.py =====
+
+"""
+Analytics refinery — pure Python math, no external API calls.
+
+Always runs BEFORE the LLM to produce structured, scrubbed context.
+The LLM never sees raw transaction data.
+
+Computes:
+  - Revenue, expense, and profit summaries
+  - Trader score (consistency × volume)
+  - Vault health signals
+  - Anomaly flags
+  - Seasonal patterns
+"""
+import logging
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+
+def build_dataframe(transactions: list[dict]) -> pd.DataFrame:
+    """Convert raw Mono transactions to a typed DataFrame."""
+    df = pd.DataFrame(transactions)
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"])
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0)
+    df["type"] = df["type"].str.upper()  # CREDIT / DEBIT
+    return df
+
+
+def daily_summary(df: pd.DataFrame) -> dict:
+    """Revenue vs expense breakdown for the most recent day with data."""
+    if df.empty:
+        return {}
+    latest = df["date"].max().date()
+    today = df[df["date"].dt.date == latest]
+    credits = today[today["type"] == "CREDIT"]["amount"].sum()
+    debits = today[today["type"] == "DEBIT"]["amount"].sum()
+    return {
+        "date": str(latest),
+        "revenue": round(float(credits), 2),
+        "expenses": round(float(debits), 2),
+        "profit": round(float(credits - debits), 2),
+    }
+
+
+def compute_trader_score(df: pd.DataFrame, days: int = 90, savings_balance: float = 0.0) -> float:
+    """
+    Trader score: 0–100.
+    4 components (25 points each): consistency, volume, savings discipline, tenure.
+    """
+    if df.empty:
+        return 0.0
+    
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    window = df[df["date"] >= pd.Timestamp(cutoff)]
+    if window.empty:
+        return 0.0
+        
+    # 1. Consistency (25 pts): active days vs expected (e.g. 15 days/month is good)
+    active_days = window["date"].dt.date.nunique()
+    consistency_ratio = min(active_days / (days * 0.5), 1.0)  # assume trading every other day is max consistency
+    consistency_pts = consistency_ratio * 25.0
+    
+    # 2. Volume (25 pts): log scale capped at 5M
+    total_volume = window[window["type"] == "CREDIT"]["amount"].sum()
+    volume_ratio = min(np.log1p(total_volume) / np.log1p(5_000_000), 1.0)
+    volume_pts = volume_ratio * 25.0
+    
+    # 3. Savings Discipline (25 pts): ratio of savings balance to 30d revenue
+    revenue_30d = df[(df["date"] >= pd.Timestamp(datetime.utcnow() - timedelta(days=30))) & (df["type"] == "CREDIT")]["amount"].sum()
+    savings_ratio = min(savings_balance / revenue_30d, 1.0) if revenue_30d > 0 else 0.0
+    savings_pts = savings_ratio * 25.0
+    
+    # 4. Tenure (25 pts): days since first transaction
+    first_tx_date = df["date"].min().to_pydatetime()
+    tenure_days = (datetime.utcnow() - first_tx_date).days
+    tenure_ratio = min(tenure_days / 90.0, 1.0)
+    tenure_pts = tenure_ratio * 25.0
+    
+    score = round(consistency_pts + volume_pts + savings_pts + tenure_pts, 1)
+    return score
+
+
+def vault_health(vault_balances: dict[str, float], revenue_30d: float) -> dict:
+    """Flag vaults that are underfunded relative to expected split."""
+    signals = {}
+    for vault, balance in vault_balances.items():
+        expected = revenue_30d * 0.2  # rough 20% baseline
+        ratio = balance / expected if expected > 0 else 0
+        signals[vault] = {
+            "balance": balance,
+            "health": "good" if ratio >= 0.8 else "low" if ratio >= 0.4 else "critical",
+        }
+    return signals
+
+
+def detect_anomalies(df: pd.DataFrame) -> list[dict]:
+    """Flag transactions > 2 std deviations from the mean."""
+    if df.empty or len(df) < 5:
+        return []
+    credits = df[df["type"] == "CREDIT"]["amount"]
+    mean, std = credits.mean(), credits.std()
+    anomalies = df[(df["type"] == "CREDIT") & (df["amount"] > mean + 2 * std)]
+    return anomalies[["date", "amount", "narration"]].to_dict("records")
+
+
+def full_context(transactions: list[dict], vault_balances: dict = None) -> dict:
+    """Master function — produces everything the LLM needs in one call."""
+    df = build_dataframe(transactions)
+    revenue_30d = 0.0
+    if not df.empty:
+        cutoff = datetime.utcnow() - timedelta(days=30)
+        w = df[(df["date"] >= pd.Timestamp(cutoff)) & (df["type"] == "CREDIT")]
+        revenue_30d = float(w["amount"].sum())
+    return {
+        "daily": daily_summary(df),
+        "trader_score": compute_trader_score(df),
+        "vault_health": vault_health(vault_balances or {}, revenue_30d),
+        "anomalies": detect_anomalies(df),
+        "revenue_30d": round(revenue_30d, 2),
+    }
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\services\session.py =====
+
+import logging
+
+from app.redis import get_session, save_session
+from app.services.whatsapp_client import send_text
+
+logger = logging.getLogger(__name__)
+
+HELP_TEXT = (
+    "Here is what you can ask me:\n"
+    "1. balance\n"
+    "2. withdraw\n"
+    "3. pay supplier\n"
+    "4. summary\n"
+    "5. score"
+)
+
+
+async def route_message(whatsapp_no: str, message: str):
+    session = await get_session(whatsapp_no)
+
+    if session.get("stage") == "LOCKED":
+        await send_text(whatsapp_no, "Your account is locked after too many wrong PIN attempts. A team member will contact you.")
+        return
+
+    if session.get("stage") == "ESCALATED":
+        await send_text(whatsapp_no, "A team member is reviewing your case. Please wait.")
+        return
+
+    if not session.get("onboarding_complete"):
+        from app.agents.onboarding_agent import handle_onboarding
+
+        await handle_onboarding(whatsapp_no, message, session)
+        return
+
+    if session.get("awaiting_pin"):
+        from app.services.pin import handle_pin_input
+
+        await handle_pin_input(whatsapp_no, message, session)
+        return
+
+    from app.utils.frustration import detect_frustration
+
+    if detect_frustration(message):
+        session["stage"] = "ESCALATED"
+        await save_session(whatsapp_no, session)
+        await send_text(whatsapp_no, "I am connecting you to a team member. Someone will respond within 30 minutes.")
+        return
+
+    from app.utils.message_parser import detect_intent
+
+    intent = detect_intent(message)
+    logger.info("Intent %s from %s", intent, whatsapp_no)
+
+    if intent in {"greeting", "balance"}:
+        from app.agents.vault_agent import handle_balance_check
+
+        await handle_balance_check(whatsapp_no, session)
+    elif intent == "withdraw":
+        from app.agents.withdrawal_agent import handle_withdrawal
+
+        await handle_withdrawal(whatsapp_no, message, session)
+    elif intent == "pay":
+        from app.agents.payment_agent import handle_payment
+
+        await handle_payment(whatsapp_no, message, session)
+    elif intent == "add_supplier":
+        from app.agents.payment_agent import handle_add_supplier
+
+        await handle_add_supplier(whatsapp_no, message, session)
+    elif intent == "summary":
+        from app.agents.vault_agent import handle_summary
+
+        await handle_summary(whatsapp_no, session)
+    elif intent == "score":
+        from app.agents.vault_agent import handle_score
+
+        await handle_score(whatsapp_no, session)
+    elif intent == "help":
+        await send_text(whatsapp_no, HELP_TEXT)
+    else:
+        await send_text(whatsapp_no, f"I did not understand that.\n\n{HELP_TEXT}")
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\services\squad.py =====
+
+import logging
+
+import httpx
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+BASE = settings.squad_base_url
+HEADERS = {
+    "Authorization": f"Bearer {settings.squad_secret_key}",
+    "Content-Type": "application/json"
+}
+
+async def register_customer(
+    first_name: str,
+    last_name: str,
+    phone: str,
+    account_number: str,
+    bank_code: str
+) -> dict:
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{BASE}/api/v1/merchant/customers",
+            headers=HEADERS,
+            json={
+                "first_name": first_name,
+                "last_name": last_name,
+                "mobile_num": phone,
+                "account_number": account_number,
+                "bank_code": bank_code
+            }
+        )
+        response.raise_for_status()
+        return response.json().get("data", {})
+
+
+def extract_webhook_signature(headers: dict) -> str:
+    return (
+        headers.get("x-squad-signature")
+        or headers.get("squad-signature")
+        or headers.get("x-signature")
+        or ""
+    )
+
+async def create_virtual_account(
+    customer_id: str,
+    vault_name: str
+) -> dict:
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{BASE}/api/v1/virtual-account",
+            headers=HEADERS,
+            json={
+                "customer_identifier": customer_id,
+                "preferred_bank": "wema-bank",
+                "account_name": vault_name
+            }
+        )
+        response.raise_for_status()
+        return response.json().get("data", {})
+
+async def transfer(
+    amount: float,
+    bank_code: str,
+    account_number: str,
+    account_name: str,
+    narration: str,
+    reference: str
+) -> dict:
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{BASE}/api/v1/payout/transfer",
+            headers=HEADERS,
+            json={
+                "amount": int(amount * 100),  # kobo
+                "bank_code": bank_code,
+                "account_number": account_number,
+                "account_name": account_name,
+                "narration": narration,
+                "transaction_reference": reference,
+                "currency_id": "NGN"
+            }
+        )
+        response.raise_for_status()
+        return response.json().get("data", {})
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\services\transcription.py =====
+
+async def transcribe_voice_note(_media_url: str) -> str | None:
+    return None
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\services\whatsapp_client.py =====
+
+import logging
+
+import httpx
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def _url() -> str:
+    return (
+        f"https://graph.facebook.com/{settings.meta_graph_api_version}/"
+        f"{settings.meta_phone_number_id}/messages"
+    )
+
+
+def _headers() -> dict:
+    return {
+        "Authorization": f"Bearer {settings.meta_whatsapp_token}",
+        "Content-Type": "application/json",
+    }
+
+
+async def _post(payload: dict) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(_url(), headers=_headers(), json=payload)
+    if response.status_code >= 300:
+        logger.error("Meta WhatsApp API error %s: %s", response.status_code, response.text)
+    response.raise_for_status()
+    return response.json()
+
+
+async def send_text(to: str, message: str) -> dict:
+    return await _post({
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"preview_url": False, "body": message},
+    })
+
+
+async def send_buttons(to: str, body: str, buttons: list[str]) -> dict:
+    options = "\n".join(f"{index + 1}. {label}" for index, label in enumerate(buttons))
+    return await send_text(to, f"{body}\n\n{options}")
+
+
+async def send_cta_button(to: str, body: str, button_label: str, url: str) -> dict:
+    return await _post({
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "cta_url",
+            "body": {"text": body},
+            "action": {
+                "name": "cta_url",
+                "parameters": {"display_text": button_label, "url": url},
+            },
+        },
+    })
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\services\__init__.py =====
+
+# Services package
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\utils\constants.py =====
+
+AAJE_NOTIFICATION_SOUND_URL = ""
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\utils\formatters.py =====
+
+from difflib import SequenceMatcher
+
+
+def format_naira(amount: float) -> str:
+    return f"₦{float(amount):,.2f}"
+
+
+def names_match(input_name: str, bank_name: str) -> bool:
+    a = (input_name or "").upper().strip()
+    b = (bank_name or "").upper().strip()
+    if a == b:
+        return True
+    if set(a.split()).issubset(set(b.split())):
+        return True
+    return SequenceMatcher(None, a, b).ratio() > 0.85
+
+
+def split_full_name(full_name: str) -> tuple[str, str]:
+    parts = full_name.strip().split()
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\utils\frustration.py =====
+
+FRUSTRATION_SIGNALS = [
+    "scam", "fraud", "useless", "nonsense", "rubbish", "419", "thief",
+    "steal", "where is my money", "my money", "complaint", "human",
+    "person", "ole", "owo mi", "e je mi", "ego m", "zamba", "banza",
+    "una don thief", "this thing no work", "abeg help", "wahala",
+]
+
+
+def detect_frustration(message: str) -> bool:
+    msg = message.lower()
+    return any(signal in msg for signal in FRUSTRATION_SIGNALS)
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\utils\message_parser.py =====
+
+def detect_intent(message: str) -> str:
+    msg = message.lower().strip()
+
+    intents = {
+        "greeting": ["hi", "hello", "hey", "start", "begin"],
+        "balance": ["balance", "how much", "my money", "kolo", "accounts", "check"],
+        "withdraw": ["withdraw", "cash out", "i need money", "send to my account", "abeg send"],
+        "pay": ["pay", "send money", "transfer", "settle", "buy from"],
+        "add_supplier": ["add supplier", "new supplier", "save supplier", "save contact"],
+        "summary": ["summary", "report", "how far", "how i dey", "my report", "analytics"],
+        "score": ["score", "credit", "passport", "my score", "rating", "grade"],
+        "help": ["help", "problem", "issue", "complaint", "useless", "scam", "human", "person"],
+    }
+
+    for intent, keywords in intents.items():
+        if any(keyword in msg for keyword in keywords):
+            return intent
+    return "unknown"
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\utils\phrases.py =====
+
+"""
+Static phrase cache for standard, non-dynamic messages.
+Tone guidelines:
+- English (en): Direct plain language, no jargon.
+- Yoruba (yo): Respectful honorifics, warm elder-to-community tone.
+- Igbo (ig): Progress-oriented, growth-centric (Oganiru).
+- Hausa (ha): Community and trust language.
+- Pidgin (pcm): Casual friendly energy.
+"""
+
+PHRASES = {
+    "greeting": {
+        "en": "Welcome to AAJE — your Digital Business Manager. How can I help you today?",
+        "yo": "Ẹ káàbọ̀ sí AAJE — Olùṣàkóso Ìṣòwò rẹ. Báwo ni mo ṣe le ràn yín lọ́wọ́ lónìí?",
+        "ig": "Nnọọ na AAJE — Onye Nlekọta Azụmahịa gị. Kedu ka m ga-esi nyere gị aka maka ọganiru azụmahịa gị taa?",
+        "ha": "Barka da zuwa AAJE — Manajan Kasuwancin ku. Yaya zan taimaka muku yau don samun albarka?",
+        "pcm": "Welcome to AAJE! How far? Wetin you need make we do today?",
+    },
+    "pin_request": {
+        "en": "Please enter your 4-digit PIN to confirm.",
+        "yo": "Ẹ jọ̀wọ́, ẹ tẹ nọ́ńbà ìkọkọ̀ ẹlẹ́yọ mẹ́rin (PIN) yín láti fìdí rẹ̀ múlẹ̀.",
+        "ig": "Biko tinye koodu PIN nwere ọnụọgụ anọ gị iji kwado.",
+        "ha": "Don Allah shigar da lambar sirri (PIN) mai lamba hudu don tabbatarwa.",
+        "pcm": "Abeg put your 4-digit PIN so we go run am.",
+    },
+    "pin_wrong": {
+        "en": "Wrong PIN. Please try again.",
+        "yo": "Nọ́ńbà ìkọkọ̀ náà kò tọ̀nà. Ẹ jọ̀wọ́, ẹ tún gbìyànjú.",
+        "ig": "PIN ezighi ezi. Biko nwaa ọzọ maka ọganiru.",
+        "ha": "Lambar sirri ba daidai ba ce. Don Allah a sake gwadawa.",
+        "pcm": "You put wrong PIN. Abeg try am again.",
+    },
+    "pin_locked": {
+        "en": "Too many wrong attempts. Your account is temporarily locked.",
+        "yo": "Ẹ ti gbìyànjú jù. Àkọ́ọ́ǹtì yín ti wà ní títìpa fún ìgbà díẹ̀ láti dáàbò bò yín.",
+        "ig": "Ị nwaala ọtụtụ ugboro. E mechiela akaụntụ gị nwa oge iji chekwaa gị.",
+        "ha": "Kun yi ƙoƙari da yawa. An rufe asusunku na ɗan lokaci don tsaro.",
+        "pcm": "You don try too many times. We don lock your account for now to protect your money.",
+    },
+    "pin_confirmed": {
+        "en": "PIN confirmed successfully.",
+        "yo": "A ti fìdí nọ́ńbà ìkọkọ̀ yín múlẹ̀ ní ìrọ̀rùn.",
+        "ig": "Anabatala PIN gị nke ọma maka ọganiru gị.",
+        "ha": "An tabbatar da lambar sirri yadda ya kamata.",
+        "pcm": "Your PIN correct! We move.",
+    },
+    "identity_confirmed": {
+        "en": "Identity confirmed successfully.",
+        "yo": "A ti fìdí ẹni tí ẹ jẹ́ múlẹ̀, ẹ kú iṣẹ́.",
+        "ig": "Anabatala njirimara gị nke ọma. Anyị na-aga n'ihu maka ọganiru.",
+        "ha": "An tabbatar da ko kai waye cikin nasara da amana.",
+        "pcm": "We don confirm say na you. We dey together.",
+    },
+    "identity_failed": {
+        "en": "Identity verification failed. Please try again.",
+        "yo": "A kò rí ẹ̀rí láti fìdí ẹni tí ẹ jẹ́ múlẹ̀. Ẹ jọ̀wọ́, ẹ tún gbìyànjú.",
+        "ig": "Nnwale njirimara adaala. Biko nwaa ọzọ.",
+        "ha": "Ba a sami nasarar tantancewa ba. Don Allah a sake gwadawa.",
+        "pcm": "We no fit confirm your identity. Abeg try am again.",
+    },
+    "account_linking": {
+        "en": "Please link your bank account to continue.",
+        "yo": "Ẹ jọ̀wọ́, ẹ so àkọ́ọ́ǹtì ilé-ìfowópamọ́ yín pọ̀ kí a lè tẹ̀síwájú.",
+        "ig": "Biko jikọọ akaụntụ ụlọ akụ gị ka anyị gaa n'ihu maka ọganiru.",
+        "ha": "Don Allah hada asusun bankinku don mu ci gaba da kasuwanci.",
+        "pcm": "Abeg link your bank account so we go fit continue.",
+    },
+    "account_linked": {
+        "en": "Your bank account has been linked successfully.",
+        "yo": "A ti so àkọ́ọ́ǹtì ilé-ìfowópamọ́ yín pọ̀ láìsí wàhálà.",
+        "ig": "Ejikọla akaụntụ ụlọ akụ gị nke ọma. Ọganiru abịala.",
+        "ha": "An haɗa asusun bankinku cikin nasara da amana.",
+        "pcm": "We don link your bank account! Better days.",
+    },
+    "processing": {
+        "en": "Processing your request, please wait.",
+        "yo": "A ń ṣiṣẹ́ lórí ìbéèrè yín, ẹ jọ̀wọ́ ẹ mú sùúrù.",
+        "ig": "Anyị na-ahazi arịrịọ gị, biko chere obere.",
+        "ha": "Muna aiki kan buƙatarku, don Allah ku jira kaɗan.",
+        "pcm": "We dey process am, abeg hold on small.",
+    },
+    "withdrawal_confirmed": {
+        "en": "Your withdrawal has been processed successfully.",
+        "yo": "A ti gbé owó tí ẹ fẹ́ yọ jáde fún yín. Ẹ kú iṣẹ́ ajé.",
+        "ig": "E meela ndọrọ ego gị nke ọma. Jisie ike n'ahịa gị.",
+        "ha": "An fitar da kuɗinku cikin nasara. Allah ya ba da sa'a.",
+        "pcm": "Your withdrawal don enter! Go flex.",
+    },
+    "payment_confirmed": {
+        "en": "Payment has been processed successfully.",
+        "yo": "A ti ṣe ìsanwó yín láìsí ìdíwọ́. Ọlọ́run á pèsè púpọ̀ síi.",
+        "ig": "E meela ịkwụ ụgwọ gị nke ọma. Ọganiru ka dị n'ihu.",
+        "ha": "An biya kuɗin cikin nasara da amana.",
+        "pcm": "Payment don drop successfully. No wahala.",
+    },
+    "error_generic": {
+        "en": "An error occurred. Please try again later.",
+        "yo": "Àṣìṣe kan wáyé. Ẹ jọ̀wọ́, ẹ tún gbìyànjú nígbà míràn.",
+        "ig": "Enwere nsogbu. Biko nwaa ọzọ ma emechaa.",
+        "ha": "An sami matsala. Don Allah a sake gwadawa anjima.",
+        "pcm": "Small network issue dey. Abeg try am later.",
+    },
+    "help_menu": {
+        "en": "Here is the help menu. Reply with what you need.",
+        "yo": "Èyí ni àkójọ ìrànlọ́wọ́. Ẹ jọ̀wọ́, ẹ sọ ohun tí ẹ nílò.",
+        "ig": "Nke a bụ ndepụta enyemaka. Gwa anyị ihe ịchọrọ maka ọganiru gị.",
+        "ha": "Ga tsarin neman taimako. Ku faɗi abin da kuke buƙata don mu taimaka.",
+        "pcm": "See help menu here. Tell us wetin you need make we run am.",
+    }
+}
+
+def get_phrase(phrase_key: str, language_code: str = "en") -> str:
+    """
+    Returns the static phrase for the given key and language code.
+    Falls back to English if the language is not found.
+    If the phrase key doesn't exist, returns a generic error string in the requested language.
+    """
+    lang = language_code.lower()
+    
+    if phrase_key not in PHRASES:
+        return PHRASES["error_generic"].get(lang, PHRASES["error_generic"]["en"])
+    
+    phrase_dict = PHRASES[phrase_key]
+    return phrase_dict.get(lang, phrase_dict.get("en", "An error occurred."))
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\utils\pii_scrubber.py =====
+
+import copy
+import re
+
+
+REMOVE_KEYS = {
+    "pin_hash",
+    "squad_customer_id",
+    "verified_bank_account",
+    "verified_bank_code",
+    "mono_account_id",
+}
+
+
+def _clean(value):
+    if isinstance(value, dict):
+        return scrub(value)
+    if isinstance(value, list):
+        return [_clean(item) for item in value]
+    if isinstance(value, str):
+        return re.sub(r"\b\d{10,11}\b", lambda m: f"***{m.group(0)[-4:]}", value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return round(float(value) / 100) * 100
+    return value
+
+
+def scrub(data: dict) -> dict:
+    cleaned = {}
+    for key, value in copy.deepcopy(data).items():
+        if key in REMOVE_KEYS:
+            continue
+        if key == "full_name" and isinstance(value, str):
+            cleaned[key] = value.split()[0] if value else ""
+            continue
+        cleaned[key] = _clean(value)
+    return cleaned
+
+
+===== FILE: C:\Users\BUY-PC COMPUTERS\AAJE\backend\app\utils\__init__.py =====
+
+# Utils package

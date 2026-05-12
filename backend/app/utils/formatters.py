@@ -2,7 +2,7 @@ from difflib import SequenceMatcher
 
 
 def format_naira(amount: float) -> str:
-    return f"₦{float(amount):,.2f}"
+    return f"\u20a6{float(amount):,.2f}"
 
 
 def names_match(input_name: str, bank_name: str) -> bool:

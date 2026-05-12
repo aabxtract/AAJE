@@ -3,29 +3,103 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AAJE Admin — Dashboard</title>
+  <title>AAJE Admin</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
-  <nav class="sidebar">
+  <aside class="sidebar">
     <div class="logo">AAJE Admin</div>
-    <a href="index.html" class="active">📊 Overview</a>
-    <a href="pages/users.html">👥 Traders</a>
-    <a href="pages/transactions.html">💳 Transactions</a>
-    <a href="pages/escalations.html">🔒 Escalations</a>
-    <a href="pages/analytics.html">📈 Analytics</a>
-  </nav>
+    <button class="nav-button active" type="button">Overview</button>
+    <button class="nav-button" type="button">Traders</button>
+    <button class="nav-button" type="button">Transactions</button>
+  </aside>
+
   <main class="content">
-    <h1>Platform Overview</h1>
-    <div class="stat-grid" id="stat-grid">
-      <div class="stat-card"><span class="label">Total Traders</span><span class="value" id="total-traders">—</span></div>
-      <div class="stat-card"><span class="label">Active Today</span><span class="value" id="active-today">—</span></div>
-      <div class="stat-card"><span class="label">Transactions Today</span><span class="value" id="txns-today">—</span></div>
-      <div class="stat-card"><span class="label">Total Vault Balance</span><span class="value" id="vault-balance">—</span></div>
-    </div>
-    <canvas id="volume-chart" height="100"></canvas>
+    <header class="topbar">
+      <div>
+        <h1>Economic Identity Dashboard</h1>
+        <p>Verified WhatsApp traders, vault balances, and AAJE scores.</p>
+      </div>
+      <div class="token-box">
+        <input id="admin-token" type="password" placeholder="Admin token" />
+        <button id="save-token" type="button">Connect</button>
+      </div>
+    </header>
+
+    <section class="stat-grid">
+      <article class="stat-card"><span>Total Users</span><strong id="total-users">-</strong></article>
+      <article class="stat-card"><span>Transactions</span><strong id="total-transactions">-</strong></article>
+      <article class="stat-card"><span>Vault Value</span><strong id="total-vault-value">-</strong></article>
+      <article class="stat-card"><span>Average Score</span><strong id="average-score">-</strong></article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Traders</h2>
+        <span id="user-count">0 users</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Language</th>
+              <th>Streams</th>
+              <th>Score</th>
+              <th>Grade</th>
+              <th>Joined</th>
+            </tr>
+          </thead>
+          <tbody id="users-table"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Recent Transactions</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Trader</th>
+              <th>Stream</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Category</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="transactions-table"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
+
+  <div class="modal" id="user-modal" aria-hidden="true">
+    <div class="modal-panel">
+      <button class="close-button" id="close-modal" type="button">Close</button>
+      <h2 id="modal-title">Trader</h2>
+      <div class="mini-grid" id="score-breakdown"></div>
+      <div class="modal-columns">
+        <section>
+          <h3>Vault Balances</h3>
+          <div id="vault-list" class="stack"></div>
+        </section>
+        <section>
+          <h3>Income By Stream</h3>
+          <canvas id="stream-chart" height="180"></canvas>
+        </section>
+      </div>
+      <section>
+        <h3>Last 10 Transactions</h3>
+        <div id="modal-transactions" class="stack"></div>
+      </section>
+    </div>
+  </div>
+
   <script src="assets/app.js"></script>
 </body>
 </html>

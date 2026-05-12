@@ -9,8 +9,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import Base, engine
+from app.config import settings
 from app.routes.admin import router as admin_router
 from app.routes.intelligence_api import router as intelligence_router
 from app.routes.mono_webhook import router as mono_router
@@ -57,6 +58,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(whatsapp_router)
 app.include_router(squad_router)
 app.include_router(mono_router)
@@ -66,4 +75,4 @@ app.include_router(admin_router, prefix="/admin")
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "environment": "sandbox", "version": "1.0.0"}
+    return {"status": "ok", "environment": settings.app_env}
