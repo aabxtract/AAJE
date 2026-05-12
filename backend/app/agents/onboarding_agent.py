@@ -143,11 +143,23 @@ async def _business_type(whatsapp_no: str, message: str, session: dict):
     if not business_type:
         await _send(whatsapp_no, "Please reply with 1, 2, 3, 4, or 5.", lang)
         return
-    session["pending_data"]["business_type"] = business_type
-    session["stage"] = "COLLECTING_STREAM_COUNT"
+    await push_state_history(whatsapp_no, session)  # snapshot COLLECTING_BUSINESS_TYPE
+    session["pending_data"]["business_type"] = btype
+    session["stage"] = "COLLECTING_ACCOUNT"
     await save_session(whatsapp_no, session)
     await _send(whatsapp_no, "Do you run more than one business? Reply 1 for Yes, 2 for No.", lang)
 
+    # Mono lookup
+    try:
+        account_info = await lookup_account(
+            account_number,
+            bank_code,
+            mock_account_name=session["pending_data"].get("full_name"),
+        )
+    except Exception:
+        logger.exception("Mono lookup failed for %s", account_number)
+        await _tx(whatsapp_no, "I could not verify that account right now. Please try again.", session)
+        return
 
 async def _stream_count(whatsapp_no: str, message: str, session: dict):
     lang = session.get("language", "en")
@@ -168,6 +180,12 @@ async def _stream_count(whatsapp_no: str, message: str, session: dict):
     await save_session(whatsapp_no, session)
     await _send(whatsapp_no, prompt, lang)
 
+    # Find the bank display name from code
+    bank_display = next(
+        (name.title() for name, code in BANK_CODES.items()
+         if code == bank_code and len(name) > 3),
+        "Unknown Bank",
+    )
 
 async def _stream_names(whatsapp_no: str, message: str, session: dict):
     lang = session.get("language", "en")
@@ -178,8 +196,6 @@ async def _stream_names(whatsapp_no: str, message: str, session: dict):
         await save_session(whatsapp_no, session)
         await _send(whatsapp_no, f"Name business {len(streams) + 1}.", lang)
         return
-    await push_state_history(whatsapp_no, session)  # snapshot COLLECTING_BUSINESS_TYPE
-    session["pending_data"]["business_type"] = btype
     session["stage"] = "COLLECTING_ACCOUNT"
     await save_session(whatsapp_no, session)
     await _send(whatsapp_no, "Enter the account number where customers send you money.", lang)
@@ -232,34 +248,10 @@ async def _bank(whatsapp_no: str, message: str, session: dict):
     )
 
     data = session["pending_data"]
-    await push_state_history(whatsapp_no, session)  # snapshot COLLECTING_ACCOUNT
-    data["account_number"] = account_number
-    data["bank_code"] = bank_code
-    data["bank_display"] = bank_display
-    data["verified_name"] = verified_name
-    session["stage"] = "CONFIRMING_IDENTITY"
-    await save_session(whatsapp_no, session)
-
-    await _tx(
-        whatsapp_no,
-        f"✅ Account found!\n\n"
-        f"*Name:* {verified_name}\n"
-        f"*Account:* {account_number}\n"
-        f"*Bank:* {bank_display}\n\n"
-        "Is this correct? Reply *Yes* or *No*.",
-        session,
-    )
-
-
-async def _confirm_identity(whatsapp_no, message, session):
-    reply = message.lower().strip()
-    if reply in {"no", "n", "2", "wrong"}:
-        session["stage"] = "COLLECTING_ACCOUNT"
-        await save_session(whatsapp_no, session)
-        await _tx(whatsapp_no, "No problem. Enter your account number and bank again.\nExample: 0123456789 GTBank", session)
-        return
-    if reply not in {"yes", "y", "1", "correct", "confirm"}:
-        await _tx(whatsapp_no, "Reply *Yes* or *No*.", session)
+    try:
+        account = await lookup_account(data["account_number"], bank_code)
+    except Exception:
+        await _send(whatsapp_no, "I could not verify that account right now. Please try again.", lang)
         return
 
     data = session["pending_data"]
