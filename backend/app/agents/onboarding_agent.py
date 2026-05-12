@@ -1,5 +1,19 @@
+"""
+Onboarding agent — guides new traders through AAJE setup via WhatsApp.
+
+Flow:
+  1. Language → 2. Name → 3. Location → 4. Business Type
+  → 5. Account+Bank → 6. Mono Lookup → 7. Confirm Identity
+  → 8. Connect Bank (CTA) → 9. Hustle Count → 10. Hustle Names
+  → 11. Create Virtual Accounts → 12. Configure Splits
+  → 13. Create PIN → 14. Confirm PIN → 15. Policy Acceptance
+"""
+import logging
+import re
+from urllib.parse import urlencode
 import uuid
 
+from app.config import settings
 from sqlalchemy import insert
 
 from app.database import AsyncSessionLocal
@@ -7,12 +21,19 @@ from app.models.income_stream import IncomeStream
 from app.models.score import Score
 from app.models.user import User
 from app.models.vault import Vault
-from app.redis import save_session
+from app.redis import push_state_history, save_session, set_mono_pending, clear_state_history
 from app.services.mono import BANK_CODES, lookup_account
 from app.services.pin import hash_pin, is_valid_pin, verify_pin
 from app.services.squad import create_virtual_account, register_customer
-from app.services.whatsapp_client import send_text
-from app.utils.formatters import names_match, split_full_name
+from app.services.whatsapp_client import send_cta_button, send_text, send_translated
+from app.utils.formatters import format_naira, names_match, split_full_name
+
+logger = logging.getLogger(__name__)
+
+
+async def _tx(whatsapp_no: str, text: str, session: dict) -> None:
+    """Translate-then-send shorthand for every onboarding stage handler."""
+    await send_translated(whatsapp_no, text, session.get("language", "en"))
 
 LANGUAGE_MAP = {
     "1": "yo", "yoruba": "yo",
@@ -54,17 +75,19 @@ async def handle_onboarding(whatsapp_no: str, message: str, session: dict):
         "COLLECTING_NAME": _name,
         "COLLECTING_LOCATION": _location,
         "COLLECTING_BUSINESS_TYPE": _business_type,
+        "COLLECTING_ACCOUNT": _account,
+        "CONFIRMING_IDENTITY": _confirm_identity,
+        "CONNECTING_BANK": _connecting_bank,
         "COLLECTING_STREAM_COUNT": _stream_count,
         "COLLECTING_STREAM_NAMES": _stream_names,
-        "COLLECTING_ACCOUNT": _account,
-        "COLLECTING_BANK": _bank,
-        "CREATING_PIN": _create_pin,
-        "CONFIRMING_PIN": _confirm_pin,
         "CREATING_ACCOUNTS": _creating_accounts,
         "CONFIGURING_SPLITS": _configuring_splits,
+        "CREATING_PIN": _create_pin,
+        "CONFIRMING_PIN": _confirm_pin,
         "POLICY_ACCEPTANCE": _policy_acceptance,
     }
-    await handlers.get(stage, _new)(whatsapp_no, message, session)
+    handler = handlers.get(stage, _new)
+    await handler(whatsapp_no, message, session)
 
 
 async def _new(whatsapp_no: str, _message: str, session: dict):
@@ -77,12 +100,13 @@ async def _new(whatsapp_no: str, _message: str, session: dict):
     )
 
 
-async def _language(whatsapp_no: str, message: str, session: dict):
-    language = LANGUAGE_MAP.get(message.lower().strip())
-    if not language:
+async def _language(whatsapp_no, message, session):
+    lang = LANGUAGE_MAP.get(message.lower().strip())
+    if not lang:
         await send_text(whatsapp_no, "Please reply with 1, 2, 3, 4, or 5.")
         return
-    session["language"] = language
+    await push_state_history(whatsapp_no, session)  # snapshot SELECTING_LANGUAGE
+    session["language"] = lang
     session["stage"] = "COLLECTING_NAME"
     await save_session(whatsapp_no, session)
     # From here onward every outbound message goes through _send.
@@ -94,6 +118,7 @@ async def _name(whatsapp_no: str, message: str, session: dict):
     if len(message.strip()) < 2:
         await _send(whatsapp_no, "Please enter your full name.", lang)
         return
+    await push_state_history(whatsapp_no, session)  # snapshot COLLECTING_NAME
     session["pending_data"]["full_name"] = message.strip()
     session["stage"] = "COLLECTING_LOCATION"
     await save_session(whatsapp_no, session)
@@ -118,11 +143,23 @@ async def _business_type(whatsapp_no: str, message: str, session: dict):
     if not business_type:
         await _send(whatsapp_no, "Please reply with 1, 2, 3, 4, or 5.", lang)
         return
-    session["pending_data"]["business_type"] = business_type
-    session["stage"] = "COLLECTING_STREAM_COUNT"
+    await push_state_history(whatsapp_no, session)  # snapshot COLLECTING_BUSINESS_TYPE
+    session["pending_data"]["business_type"] = btype
+    session["stage"] = "COLLECTING_ACCOUNT"
     await save_session(whatsapp_no, session)
     await _send(whatsapp_no, "Do you run more than one business? Reply 1 for Yes, 2 for No.", lang)
 
+    # Mono lookup
+    try:
+        account_info = await lookup_account(
+            account_number,
+            bank_code,
+            mock_account_name=session["pending_data"].get("full_name"),
+        )
+    except Exception:
+        logger.exception("Mono lookup failed for %s", account_number)
+        await _tx(whatsapp_no, "I could not verify that account right now. Please try again.", session)
+        return
 
 async def _stream_count(whatsapp_no: str, message: str, session: dict):
     lang = session.get("language", "en")
@@ -143,6 +180,12 @@ async def _stream_count(whatsapp_no: str, message: str, session: dict):
     await save_session(whatsapp_no, session)
     await _send(whatsapp_no, prompt, lang)
 
+    # Find the bank display name from code
+    bank_display = next(
+        (name.title() for name, code in BANK_CODES.items()
+         if code == bank_code and len(name) > 3),
+        "Unknown Bank",
+    )
 
 async def _stream_names(whatsapp_no: str, message: str, session: dict):
     lang = session.get("language", "en")
@@ -186,8 +229,11 @@ async def _bank(whatsapp_no: str, message: str, session: dict):
     except Exception:
         await _send(whatsapp_no, "I could not verify that account right now. Please try again.", lang)
         return
-    verified_name = account.get("account_name") or account.get("name", "")
-    if not names_match(data["full_name"], verified_name):
+
+    data = session["pending_data"]
+
+    # Verify name match
+    if not names_match(data["full_name"], data["verified_name"]):
         attempts = session.get("identity_attempts", 0) + 1
         session["identity_attempts"] = attempts
         if attempts >= 3:
@@ -203,8 +249,22 @@ async def _bank(whatsapp_no: str, message: str, session: dict):
         await save_session(whatsapp_no, session)
         await _send(whatsapp_no, "The account name does not match. Enter the account number again.", lang)
         return
+
+    # Register Squad customer in background
     first, last = split_full_name(data["full_name"])
-    customer = await register_customer(first, last, whatsapp_no, data["account_number"], bank_code)
+    try:
+        customer = await register_customer(
+            first, last, whatsapp_no, data["account_number"], data["bank_code"]
+        )
+        data["squad_customer_id"] = (
+            customer.get("customer_id")
+            or customer.get("id")
+            or customer.get("customer_identifier")
+        )
+    except Exception:
+        logger.exception("Squad customer registration failed")
+        data["squad_customer_id"] = None
+
     data["verified_bank_account"] = data["account_number"]
     data["verified_bank_code"] = bank_code
     data["verified_bank_name"] = verified_name
@@ -222,8 +282,6 @@ async def _create_pin(whatsapp_no: str, message: str, session: dict):
     if not is_valid_pin(pin):
         await _send(whatsapp_no, "PIN must be exactly 4 digits and not obvious like 1234 or 1111.", lang)
         return
-    session["pending_data"]["pin_hash"] = hash_pin(pin)
-    session["stage"] = "CONFIRMING_PIN"
     await save_session(whatsapp_no, session)
     await _send(whatsapp_no, "Confirm your PIN. Enter it again.", lang)
 
@@ -236,6 +294,11 @@ async def _confirm_pin(whatsapp_no: str, message: str, session: dict):
         await save_session(whatsapp_no, session)
         await _send(whatsapp_no, "PINs do not match. Create your 4-digit PIN again.", lang)
         return
+
+    # Automatically add savings and emergency vaults
+    streams.append({"stream_name": "Savings", "is_savings": True, "is_emergency": False})
+    streams.append({"stream_name": "Emergency", "is_savings": False, "is_emergency": True})
+
     session["stage"] = "CREATING_ACCOUNTS"
     await save_session(whatsapp_no, session)
     await _send(whatsapp_no, "PIN set. I am creating your Squad accounts now.", lang)
@@ -245,12 +308,38 @@ async def _confirm_pin(whatsapp_no: str, message: str, session: dict):
 async def _creating_accounts(whatsapp_no: str, _message: str, session: dict):
     lang = session.get("language", "en")
     data = session["pending_data"]
+    customer_id = data.get("squad_customer_id")
+
+    if not customer_id:
+        # Retry Squad registration
+        first, last = split_full_name(data["full_name"])
+        try:
+            customer = await register_customer(
+                first, last, whatsapp_no, data["account_number"], data["bank_code"]
+            )
+            customer_id = (
+                customer.get("customer_id")
+                or customer.get("id")
+                or customer.get("customer_identifier")
+            )
+            data["squad_customer_id"] = customer_id
+        except Exception:
+            logger.exception("Squad registration retry failed")
+            await _tx(whatsapp_no, "Something went wrong setting up your accounts. Please try again in a moment.", session)
+            return
+
     for stream in data["streams"]:
-        account = await create_virtual_account(data["squad_customer_id"], stream["stream_name"])
-        stream["squad_account_number"] = account.get("account_number") or account.get("virtual_account_number")
-        stream["squad_account_id"] = account.get("account_id") or account.get("id")
+        try:
+            account = await create_virtual_account(customer_id, stream["stream_name"])
+            stream["squad_account_number"] = account.get("account_number") or account.get("virtual_account_number")
+            stream["squad_account_id"] = account.get("account_id") or account.get("id")
+        except Exception:
+            logger.exception("Virtual account creation failed for %s", stream["stream_name"])
+            stream["squad_account_number"] = None
+            stream["squad_account_id"] = None
+
     session["stage"] = "CONFIGURING_SPLITS"
-    session["pending_data"]["split_index"] = 0
+    data["split_index"] = 0
     await save_session(whatsapp_no, session)
     await _send(whatsapp_no, f"What percentage should go to {data['streams'][0]['stream_name']}?", lang)
 
@@ -263,19 +352,22 @@ async def _configuring_splits(whatsapp_no: str, message: str, session: dict):
     except ValueError:
         await _send(whatsapp_no, "Enter the percentage as a number.", lang)
         return
+
     index = int(data.get("split_index", 0))
     data["streams"][index]["split_percentage"] = percentage
     index += 1
     data["split_index"] = index
+
     if index < len(data["streams"]):
         await save_session(whatsapp_no, session)
         await _send(whatsapp_no, f"What percentage should go to {data['streams'][index]['stream_name']}?", lang)
         return
-    total = sum(float(stream.get("split_percentage", 0)) for stream in data["streams"])
+
+    total = sum(float(s.get("split_percentage", 0)) for s in data["streams"])
     if round(total, 2) != 100:
         data["split_index"] = 0
-        for stream in data["streams"]:
-            stream.pop("split_percentage", None)
+        for s in data["streams"]:
+            s.pop("split_percentage", None)
         await save_session(whatsapp_no, session)
         await _send(
             whatsapp_no,
@@ -283,7 +375,19 @@ async def _configuring_splits(whatsapp_no: str, message: str, session: dict):
             lang,
         )
         return
-    session["stage"] = "POLICY_ACCEPTANCE"
+
+    session["stage"] = "CREATING_PIN"
+    await save_session(whatsapp_no, session)
+    await _tx(whatsapp_no, "Splits configured ✅\n\nNow create a 4-digit PIN to secure your account.", session)
+
+
+async def _create_pin(whatsapp_no, message, session):
+    pin = message.strip()
+    if not is_valid_pin(pin):
+        await _tx(whatsapp_no, "PIN must be exactly 4 digits and not obvious like 1234 or 1111.", session)
+        return
+    session["pending_data"]["pin_hash"] = hash_pin(pin)
+    session["stage"] = "CONFIRMING_PIN"
     await save_session(whatsapp_no, session)
     await _send(
         whatsapp_no,
@@ -300,8 +404,10 @@ async def _policy_acceptance(whatsapp_no: str, message: str, session: dict):
     if message.lower().strip() not in {"i accept", "accept", "yes", "1"}:
         await _send(whatsapp_no, "Reply I Accept when you are ready.", lang)
         return
+
     data = session["pending_data"]
     user_id = uuid.uuid4()
+
     async with AsyncSessionLocal() as db:
         await db.execute(
             insert(User).values(
@@ -334,13 +440,17 @@ async def _policy_acceptance(whatsapp_no: str, message: str, session: dict):
                 )
             )
             await db.execute(insert(Vault).values(user_id=user_id, stream_id=stream_id))
-        await db.execute(insert(Score).values(user_id=user_id, credit_grade="D", recommended_loan_ceiling=0))
+        await db.execute(insert(Score).values(
+            user_id=user_id, credit_grade="D", recommended_loan_ceiling=0,
+        ))
         await db.commit()
 
     session["onboarding_complete"] = True
     session["stage"] = "ACTIVE"
     session["pending_data"] = {}
     await save_session(whatsapp_no, session)
+    await clear_state_history(whatsapp_no)  # onboarding done — no more "back"
+
     first, _ = split_full_name(data["full_name"])
     await _send(
         whatsapp_no,

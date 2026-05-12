@@ -30,6 +30,17 @@ async def _post(payload: dict) -> dict:
     return response.json()
 
 
+async def send_translated(to: str, message: str, language: str = "en") -> dict:
+    """
+    Translate ``message`` into the user's chosen language via the LLM,
+    then send it.  Falls back to raw English if translation fails or is
+    not needed (language == 'en').
+    """
+    from app.intelligence.llm import translate_message  # lazy import avoids circular deps
+    translated = await translate_message(message, language)
+    return await send_text(to, translated)
+
+
 async def send_text(to: str, message: str) -> dict:
     return await _post({
         "messaging_product": "whatsapp",
