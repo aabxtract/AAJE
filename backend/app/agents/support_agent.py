@@ -1,41 +1,33 @@
+"""
+Support agent — handles frustrated users and explicit human-agent requests.
+Escalations are logged to Postgres and the session is frozen until a team member resolves it.
+"""
+import logging
+
+from sqlalchemy import insert, select
+
+from app.database import AsyncSessionLocal
+from app.models.escalation import Escalation
+from app.models.user import User
+from app.redis import save_session
 from app.services.whatsapp_client import send_text
 from app.utils.frustration import detect_frustration
-from app.redis import save_session, get_session
-from app.database import AsyncSessionLocal
-from sqlalchemy import select, insert
-from app.models.user import User
-from app.models.escalation import Escalation
 
-async def handle_support(
-    whatsapp_no: str,
-    message: str,
-    session: dict
-):
-    language = session.get("language", "en")
+logger = logging.getLogger(__name__)
 
-    # Check for frustration
-    if detect_frustration(message, language):
-        await trigger_escalation(
-            whatsapp_no,
-            message,
-            "frustration",
-            session
-        )
+
+async def handle_support(whatsapp_no: str, message: str, session: dict):
+    """Tier-1 automated help.  If frustration or explicit human request is
+    detected, escalate immediately; otherwise show the self-service menu."""
+    if detect_frustration(message):
+        await trigger_escalation(whatsapp_no, message, "frustration", session)
         return
 
-    # Check explicit human request
-    if any(word in message.lower() for word in [
-        "human", "person", "speak to someone", "real person"
-    ]):
-        await trigger_escalation(
-            whatsapp_no,
-            message,
-            "explicit_request",
-            session
-        )
+    human_keywords = {"human", "person", "speak to someone", "real person", "agent", "talk to someone"}
+    if any(kw in message.lower() for kw in human_keywords):
+        await trigger_escalation(whatsapp_no, message, "explicit_request", session)
         return
 
-    # Tier-1 automated help
     await send_text(
         whatsapp_no,
         "I can help you with:\n\n"
@@ -44,35 +36,34 @@ async def handle_support(
         "3. Pay a supplier — reply *pay*\n"
         "4. See your report — reply *summary*\n"
         "5. Speak to a person — reply *human*\n\n"
-        "What do you need?"
+        "What do you need?",
     )
+
 
 async def trigger_escalation(
     whatsapp_no: str,
     trigger_message: str,
     trigger_type: str,
-    session: dict
+    session: dict,
 ):
+    """Create an escalation record and lock the session."""
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(User).where(User.whatsapp_no == whatsapp_no)
-        )
+        result = await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))
         user = result.scalar_one_or_none()
 
-        # Save conversation snapshot
-        snapshot = {
-            "session": session,
-            "last_message": trigger_message
-        }
-
         if user:
+            snapshot = {
+                "session_stage": session.get("stage"),
+                "language": session.get("language"),
+                "last_message": trigger_message,
+            }
             await db.execute(
                 insert(Escalation).values(
                     user_id=user.id,
                     trigger_message=trigger_message,
                     trigger_type=trigger_type,
                     conversation_snapshot=snapshot,
-                    status="open"
+                    status="open",
                 )
             )
             await db.commit()
@@ -84,5 +75,5 @@ async def trigger_escalation(
         whatsapp_no,
         "I'm connecting you to a team member right now. 🙏\n\n"
         "Someone will respond within 30 minutes.\n"
-        "Please stay on this chat."
+        "Please stay on this chat.",
     )

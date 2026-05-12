@@ -7,9 +7,8 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Lazy client initialization — do not fail at import time if the key is missing.
-client: Optional[AsyncGroq] = None
-MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+client = AsyncGroq(api_key=settings.groq_api_key)
+MODEL = "openai/gpt-oss-120b"
 
 
 def _get_client() -> Optional[AsyncGroq]:
@@ -27,11 +26,8 @@ def _get_client() -> Optional[AsyncGroq]:
 
 
 async def categorize_transaction(narration: str, stream_names: list[str]) -> str:
-    c = _get_client()
-    if not c:
-        return stream_names[0] if stream_names else ""
     try:
-        response = await c.chat.completions.create(
+        response = await client.chat.completions.create(
             model=MODEL,
             messages=[
                 {
@@ -49,10 +45,10 @@ async def categorize_transaction(narration: str, stream_names: list[str]) -> str
             max_tokens=50,
         )
         selected = response.choices[0].message.content.strip()
-        return selected if selected in stream_names else (stream_names[0] if stream_names else "")
+        return selected if selected in stream_names else stream_names[0]
     except Exception:
-        logger.exception("categorize_transaction failed")
-        return stream_names[0] if stream_names else ""
+        logger.exception("Transaction categorization failed")
+        return stream_names[0]
 
 
 async def translate_message(text: str, language: str) -> str:
@@ -97,19 +93,8 @@ async def translate_message(text: str, language: str) -> str:
 
 
 async def generate_insight(scrubbed_context: dict) -> str:
-    c = _get_client()
-    if not c:
-        # Lightweight deterministic fallback insight using scrubbed numeric data.
-        try:
-            score = scrubbed_context.get("score", {})
-            trader_score = score.get("trader_score") if isinstance(score, dict) else None
-            if trader_score is not None:
-                return f"Your AAJE score is {trader_score:.1f}. Keep receiving verified payments to improve it."
-        except Exception:
-            pass
-        return "Here is a short insight: keep receiving verified payments to build your AAJE score."
     try:
-        response = await c.chat.completions.create(
+        response = await client.chat.completions.create(
             model=MODEL,
             messages=[
                 {
@@ -127,5 +112,5 @@ async def generate_insight(scrubbed_context: dict) -> str:
         )
         return response.choices[0].message.content.strip()
     except Exception:
-        logger.exception("generate_insight failed")
-        return "Here is a short insight: keep receiving verified payments to build your AAJE score."
+        logger.exception("Insight generation failed")
+        return "Keep track of your daily sales to grow your business score."

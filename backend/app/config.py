@@ -1,8 +1,15 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+
+BASE_DIR = Path(__file__).resolve().parents[1]
 
 
 class Settings(BaseSettings):
     app_env: str = "development"
+    app_public_url: str = ""
+    whatsapp_bot_number: str = ""
 
     meta_app_id: str
     meta_app_secret: str
@@ -20,6 +27,7 @@ class Settings(BaseSettings):
     mono_secret_key: str
     mono_webhook_secret: str
     mono_base_url: str = "https://sandbox.mono.co"
+    mono_lookup_mock: bool = False
 
     supabase_url: str
     supabase_key: str
@@ -33,7 +41,7 @@ class Settings(BaseSettings):
     secret_key: str
 
     class Config:
-        env_file = ".env"
+        env_file = BASE_DIR / ".env"
         extra = "ignore"
 
 
