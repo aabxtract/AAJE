@@ -7,29 +7,33 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 client = AsyncGroq(api_key=settings.groq_api_key)
-MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+MODEL = "openai/gpt-oss-120b"
 
 
 async def categorize_transaction(narration: str, stream_names: list[str]) -> str:
-    response = await client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a financial categorization engine for a Nigerian trader. "
-                    "Given this payment narration and the trader's business names, return only "
-                    "the business name that this payment most likely belongs to. If unclear, "
-                    "return the first business name. Return only the business name, nothing else."
-                ),
-            },
-            {"role": "user", "content": f"Narration: {narration}. Business names: {stream_names}"},
-        ],
-        temperature=0,
-        max_tokens=50,
-    )
-    selected = response.choices[0].message.content.strip()
-    return selected if selected in stream_names else stream_names[0]
+    try:
+        response = await client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a financial categorization engine for a Nigerian trader. "
+                        "Given this payment narration and the trader's business names, return only "
+                        "the business name that this payment most likely belongs to. If unclear, "
+                        "return the first business name. Return only the business name, nothing else."
+                    ),
+                },
+                {"role": "user", "content": f"Narration: {narration}. Business names: {stream_names}"},
+            ],
+            temperature=0,
+            max_tokens=50,
+        )
+        selected = response.choices[0].message.content.strip()
+        return selected if selected in stream_names else stream_names[0]
+    except Exception:
+        logger.exception("Transaction categorization failed")
+        return stream_names[0]
 
 
 async def translate_message(text: str, language: str) -> str:
@@ -69,20 +73,24 @@ async def translate_message(text: str, language: str) -> str:
 
 
 async def generate_insight(scrubbed_context: dict) -> str:
-    response = await client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a financial advisor for a Nigerian market trader. "
-                    "Be direct and specific. Maximum 2 sentences. Use only the numbers provided. "
-                    "End with one concrete action."
-                ),
-            },
-            {"role": "user", "content": str(scrubbed_context)},
-        ],
-        temperature=0.3,
-        max_tokens=160,
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = await client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a financial advisor for a Nigerian market trader. "
+                        "Be direct and specific. Maximum 2 sentences. Use only the numbers provided. "
+                        "End with one concrete action."
+                    ),
+                },
+                {"role": "user", "content": str(scrubbed_context)},
+            ],
+            temperature=0.3,
+            max_tokens=160,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        logger.exception("Insight generation failed")
+        return "Keep track of your daily sales to grow your business score."

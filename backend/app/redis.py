@@ -1,6 +1,14 @@
 """
 Upstash Redis client — uses the upstash-redis SDK with async support.
 All keys are namespaced and TTL-managed so expired sessions self-delete.
+
+State history stack
+-------------------
+Every time the onboarding agent is about to advance to a new stage it calls
+``push_state_history(whatsapp_no, session)`` to snapshot the *current* state.
+The user can then send "back", "undo", or "go back" and the session router
+calls ``pop_state_history(whatsapp_no)`` to restore the previous snapshot.
+The stack is capped at MAX_HISTORY_DEPTH entries and expires with the session.
 """
 import json
 from upstash_redis.asyncio import Redis
@@ -77,3 +85,61 @@ async def set_rate_limit(whatsapp_no: str) -> int:
     if count == 1:
         await redis.expire(key, 60)
     return count
+
+
+# ── State history (revert / back action) ──────────────────────────────────────
+
+MAX_HISTORY_DEPTH = 10
+_HISTORY_TTL = 1800  # match session TTL (30 min)
+
+
+async def push_state_history(whatsapp_no: str, session: dict) -> None:
+    """
+    Snapshot *current* session before a stage transition.
+
+    Call this BEFORE overwriting ``session["stage"]`` so the snapshot
+    captures the state the user is about to leave.
+    """
+    key = f"state_history:{whatsapp_no}"
+    # Fetch existing history (stored as a JSON list)
+    raw = await redis.get(key)
+    history: list = json.loads(raw) if raw else []
+
+    # Only keep the last MAX_HISTORY_DEPTH entries
+    history.append(session)
+    if len(history) > MAX_HISTORY_DEPTH:
+        history = history[-MAX_HISTORY_DEPTH:]
+
+    await redis.setex(key, _HISTORY_TTL, json.dumps(history))
+
+
+async def pop_state_history(whatsapp_no: str) -> dict | None:
+    """
+    Restore the most-recent snapshot.
+
+    Returns the restored session dict (already saved back to Redis) or
+    ``None`` if there is no history to go back to.
+    """
+    key = f"state_history:{whatsapp_no}"
+    raw = await redis.get(key)
+    if not raw:
+        return None
+
+    history: list = json.loads(raw) if isinstance(raw, str) else raw
+    if not history:
+        return None
+
+    # Pop the last snapshot
+    previous_session: dict = history.pop()
+
+    # Persist the updated (shorter) history stack
+    await redis.setex(key, _HISTORY_TTL, json.dumps(history))
+
+    # Restore the session in Redis so the next message handler sees it
+    await save_session(whatsapp_no, previous_session)
+    return previous_session
+
+
+async def clear_state_history(whatsapp_no: str) -> None:
+    """Wipe the history stack — called on full session reset or onboarding completion."""
+    await redis.delete(f"state_history:{whatsapp_no}")
