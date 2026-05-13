@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import insert, select
 
@@ -34,20 +35,34 @@ async def handle_withdrawal(whatsapp_no: str, message: str, session: dict):
     if not user:
         await send_text(whatsapp_no, "I could not find your AAJE account.")
         return
+    if not rows:
+        await send_text(whatsapp_no, "You do not have any AAJE accounts yet.")
+        return
 
     parts = message.replace(",", "").split()
     if len(parts) >= 2 and parts[0].isdigit():
         index = int(parts[0]) - 1
-        amount = float(parts[1])
+        try:
+            amount = float(parts[1])
+        except ValueError:
+            await send_text(whatsapp_no, "Please enter the amount as a number. Example: 1 5000")
+            return
         if index < 0 or index >= len(rows):
             await send_text(whatsapp_no, "That account number is not on your list.")
             return
+        if amount <= 0:
+            await send_text(whatsapp_no, "Withdrawal amount must be more than zero.")
+            return
         stream, vault = rows[index]
+        if float(vault.current_balance or 0) < amount:
+            await send_text(whatsapp_no, f"{stream.stream_name} has only {format_naira(vault.current_balance or 0)}.")
+            return
         session.setdefault("pending_data", {})["withdrawal"] = {
             "stream_id": str(stream.id),
             "stream_name": stream.stream_name,
             "amount": amount,
         }
+        session["pending_data"].pop("withdrawal_flow", None)
         session["awaiting_pin"] = True
         session["pin_action"] = "withdrawal"
         await save_session(whatsapp_no, session)
@@ -60,6 +75,8 @@ async def handle_withdrawal(whatsapp_no: str, message: str, session: dict):
         )
         return
 
+    session.setdefault("pending_data", {})["withdrawal_flow"] = "awaiting_selection"
+    await save_session(whatsapp_no, session)
     lines = ["Which account and how much? Reply like: 1 5000"]
     for index, (stream, vault) in enumerate(rows, start=1):
         lines.append(f"{index}. {stream.stream_name}: {format_naira(vault.current_balance or 0)}")
@@ -93,10 +110,11 @@ async def execute_withdrawal(whatsapp_no: str, session: dict, db):
         category="withdrawal",
         source="withdrawal",
         squad_transaction_ref=reference,
-        timestamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         processed=True,
     ))
     await db.commit()
     session.get("pending_data", {}).pop("withdrawal", None)
+    session.get("pending_data", {}).pop("withdrawal_flow", None)
     await save_session(whatsapp_no, session)
     await send_text(whatsapp_no, f"Withdrawal complete. Ref: {reference}")

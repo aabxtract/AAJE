@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import desc, select
 
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -25,7 +25,9 @@ async def economic_score(user_id: str, _: None = Security(_authorize)):
         user = await db.get(User, user_id)
         if not user or not user.onboarding_complete:
             raise HTTPException(status_code=404, detail="User not found")
-        score_result = await db.execute(select(Score).where(Score.user_id == user_id))
+        score_result = await db.execute(
+            select(Score).where(Score.user_id == user_id).order_by(desc(Score.computed_at))
+        )
         score = score_result.scalar_one_or_none()
         if not score:
             raise HTTPException(status_code=404, detail="Score not found")

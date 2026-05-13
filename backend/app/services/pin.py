@@ -59,6 +59,8 @@ async def handle_pin_input(whatsapp_no: str, pin_input: str, session: dict):
                 from app.agents.payment_agent import execute_payment
 
                 await execute_payment(whatsapp_no, session, db)
+            else:
+                await save_session(whatsapp_no, session)
             return
 
         attempts = await increment_pin_attempts(whatsapp_no)
