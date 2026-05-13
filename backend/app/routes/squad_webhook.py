@@ -200,34 +200,16 @@ async def squad_webhook(request: Request):
 
         await db.commit()
 
-    # 9. Notify the trader
+    # 9. Notify the trader via agent runtime
+    from app.agents.agent_runtime import handle_event
+    event_message = f"SYSTEM_EVENT: Received payment of {amount} NGN. Narration: '{narration}'. Transaction Ref: {reference}."
     try:
-        await notify_split(
-            user.whatsapp_no,
-            user.id,
-            float(amount),
-            split_lines,
-            user.preferred_language or "en",
-        )
+        await handle_event(user.whatsapp_no, event_message)
     except Exception:
-        logger.exception("Split notification failed for user %s", user.id)
-
-    # 10. Check for anomaly
-    if amount >= ANOMALY_THRESHOLD:
-        try:
-            await notify_anomaly(
-                user.whatsapp_no,
-                user.id,
-                float(amount),
-                narration,
-                user.preferred_language or "en",
-            )
-        except Exception:
-            logger.exception("Anomaly notification failed for user %s", user.id)
+        logger.exception("Agent runtime failed to process squad webhook event for user %s", user.id)
 
     logger.info(
-        "Squad webhook processed: %s → %s splits",
+        "Squad webhook processed via agent: %s",
         format_naira(float(amount)),
-        len(split_lines),
     )
     return {"status": "processed"}

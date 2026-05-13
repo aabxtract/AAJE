@@ -1,0 +1,58 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "screens": [
+    {
+      "id": "START",
+      "title": "Confirm Action",
+      "terminal": true,
+      "data": {
+        "action_label": {
+          "type": "string",
+          "__example__": "this withdrawal"
+        },
+        "flow_token": {
+          "type": "string",
+          "__example__": "pin_confirm:example-token"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "confirm_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Enter Security PIN"
+              },
+              {
+                "type": "TextBody",
+                "text": "Please enter your 4-digit AAJE PIN to authorize ${data.action_label}."
+              },
+              {
+                "type": "TextInput",
+                "name": "pin",
+                "label": "4-Digit PIN",
+                "input-type": "password",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "Authorize",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "pin": "${form.pin}",
+                    "flow_token": "${data.flow_token}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -7,6 +7,7 @@ from app.models.user import User
 from app.redis import save_session
 from app.services.squad import transfer
 from app.services.whatsapp_client import send_text
+from app.services.whatsapp_flows import send_pin_confirm_flow
 from app.utils.formatters import format_naira
 
 
@@ -27,6 +28,9 @@ async def handle_payment(whatsapp_no: str, message: str, session: dict):
         session["awaiting_pin"] = True
         session["pin_action"] = "payment"
         await save_session(whatsapp_no, session)
+        sent = await send_pin_confirm_flow(whatsapp_no, session, "this supplier payment")
+        if sent:
+            return
         await send_text(whatsapp_no, f"Pay {format_naira(float(amount.replace(',', '')))} to {name} ({account_number}). Enter your PIN to confirm.")
         return
     await send_text(whatsapp_no, "To pay a supplier, reply: Name, Bank Code, Account Number, Amount\nExample: Alhaji Musa, 058, 0123456789, 10000")

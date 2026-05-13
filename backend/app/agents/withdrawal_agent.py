@@ -9,6 +9,7 @@ from app.models.vault import Vault
 from app.redis import save_session
 from app.services.squad import transfer
 from app.services.whatsapp_client import send_text
+from app.services.whatsapp_flows import send_pin_confirm_flow
 from app.utils.formatters import format_naira
 
 
@@ -50,6 +51,9 @@ async def handle_withdrawal(whatsapp_no: str, message: str, session: dict):
         session["awaiting_pin"] = True
         session["pin_action"] = "withdrawal"
         await save_session(whatsapp_no, session)
+        sent = await send_pin_confirm_flow(whatsapp_no, session, "this withdrawal")
+        if sent:
+            return
         await send_text(
             whatsapp_no,
             f"Withdraw {format_naira(amount)} from {stream.stream_name} to your {user.verified_bank_name} account ending {user.verified_bank_account[-4:]}. Enter your PIN to confirm.",

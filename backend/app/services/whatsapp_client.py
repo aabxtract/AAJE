@@ -75,3 +75,39 @@ async def send_cta_button(to: str, body: str, button_label: str, url: str) -> di
             },
         },
     })
+
+
+async def send_flow(
+    to: str,
+    body: str,
+    flow_id: str,
+    flow_token: str,
+    cta: str,
+    screen: str = "START",
+    data: dict | None = None,
+) -> dict:
+    payload = {"screen": screen}
+    if data:
+        payload["data"] = data
+
+    return await _post({
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "flow",
+            "body": {"text": body},
+            "action": {
+                "name": "flow",
+                "parameters": {
+                    "mode": "published",
+                    "flow_message_version": "3",
+                    "flow_id": flow_id,
+                    "flow_token": flow_token,
+                    "flow_cta": cta,
+                    "flow_action": "navigate",
+                    "flow_action_payload": payload,
+                },
+            },
+        },
+    })

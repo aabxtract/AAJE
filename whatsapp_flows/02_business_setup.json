@@ -1,0 +1,110 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "screens": [
+    {
+      "id": "START",
+      "title": "Business Vaults",
+      "terminal": true,
+      "data": {
+        "yes_no": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "yes",
+              "title": "Yes"
+            },
+            {
+              "id": "no",
+              "title": "No"
+            }
+          ]
+        },
+        "flow_token": {
+          "type": "string",
+          "__example__": "business_setup:example-token"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "business_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Your Businesses"
+              },
+              {
+                "type": "TextInput",
+                "name": "business_1_name",
+                "label": "Business 1 Name",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "business_2_name",
+                "label": "Business 2 Name (Optional)",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "business_3_name",
+                "label": "Business 3 Name (Optional)",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "TextHeading",
+                "text": "Optional Vaults"
+              },
+              {
+                "type": "Dropdown",
+                "name": "include_savings",
+                "label": "Do you need a Savings vault?",
+                "required": true,
+                "data-source": "${data.yes_no}"
+              },
+              {
+                "type": "Dropdown",
+                "name": "include_emergency",
+                "label": "Do you need an Emergency vault?",
+                "required": true,
+                "data-source": "${data.yes_no}"
+              },
+              {
+                "type": "Footer",
+                "label": "Create Vaults",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "business_1_name": "${form.business_1_name}",
+                    "business_2_name": "${form.business_2_name}",
+                    "business_3_name": "${form.business_3_name}",
+                    "include_savings": "${form.include_savings}",
+                    "include_emergency": "${form.include_emergency}",
+                    "flow_token": "${data.flow_token}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -17,11 +17,20 @@ class Settings(BaseSettings):
     meta_whatsapp_token: str
     meta_webhook_verify_token: str
     meta_graph_api_version: str = "v23.0"
+    meta_onboarding_profile_flow_id: str = ""
+    meta_business_setup_flow_id: str = ""
+    meta_pin_setup_flow_id: str = ""
+    meta_pin_confirm_flow_id: str = ""
+    meta_passport_flow_id: str = ""
+    meta_flow_private_key: str = ""
+    meta_flow_private_key_path: str = ""
+    meta_flow_private_key_passphrase: str = ""
 
     squad_secret_key: str
     squad_base_url: str = "https://sandbox-api-d.squadco.com"
     squad_revenue_account: str
     squad_revenue_bank_code: str
+    squad_mock_on_account_limit: bool = True
 
     mono_public_key: str
     mono_secret_key: str

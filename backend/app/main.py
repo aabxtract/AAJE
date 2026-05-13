@@ -12,10 +12,12 @@ from fastapi import FastAPI
 
 from app.database import Base, engine
 from app.routes.admin import router as admin_router
+from app.routes.browser_flow import router as browser_flow_router
 from app.routes.intelligence_api import router as intelligence_router
 from app.routes.mono_webhook import router as mono_router
 from app.routes.squad_webhook import router as squad_router
 from app.routes.webhook import router as whatsapp_router
+from app.routes.whatsapp_flow_endpoint import router as whatsapp_flow_endpoint_router
 
 # Import all models so Base.metadata knows about them
 import app.models  # noqa: F401
@@ -58,6 +60,8 @@ app = FastAPI(
 )
 
 app.include_router(whatsapp_router)
+app.include_router(whatsapp_flow_endpoint_router)
+app.include_router(browser_flow_router)
 app.include_router(squad_router)
 app.include_router(mono_router)
 app.include_router(intelligence_router)

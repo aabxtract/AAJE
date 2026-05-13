@@ -1,9 +1,7 @@
-from passlib.context import CryptContext
+import bcrypt
 
 from app.redis import clear_pin_attempts, increment_pin_attempts, save_session
 from app.services.whatsapp_client import send_text
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 INVALID_PINS = {
     "1111", "2222", "3333", "4444", "5555", "6666", "7777", "8888",
@@ -12,13 +10,20 @@ INVALID_PINS = {
 
 
 def hash_pin(pin: str) -> str:
-    return pwd_context.hash(pin)
+    salt = bcrypt.gensalt()
+    # bcrypt requires bytes
+    hashed = bcrypt.hashpw(pin.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 def verify_pin(pin: str, hashed: str) -> bool:
     if not hashed:
         return False
-    return pwd_context.verify(pin, hashed)
+    try:
+        # bcrypt requires bytes
+        return bcrypt.checkpw(pin.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 def is_valid_pin(pin: str) -> bool:
@@ -43,6 +48,7 @@ async def handle_pin_input(whatsapp_no: str, pin_input: str, session: dict):
             action = session.get("pin_action")
             session["awaiting_pin"] = False
             session["pin_action"] = None
+            session["pending_flow"] = None
             await save_session(whatsapp_no, session)
 
             if action == "withdrawal":

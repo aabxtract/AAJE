@@ -1,0 +1,87 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "screens": [
+    {
+      "id": "START",
+      "title": "Business Passport",
+      "terminal": true,
+      "data": {
+        "full_name": {
+          "type": "string",
+          "__example__": "Adebayo Olusegun"
+        },
+        "trader_score": {
+          "type": "string",
+          "__example__": "72.5"
+        },
+        "credit_grade": {
+          "type": "string",
+          "__example__": "B"
+        },
+        "recommended_loan_ceiling": {
+          "type": "string",
+          "__example__": "50000"
+        },
+        "flow_token": {
+          "type": "string",
+          "__example__": "business_passport:example-token"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "passport_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "AAJE Business Passport"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.full_name}"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Trader Score"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.trader_score}"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Credit Grade"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.credit_grade}"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Suggested Credit Threshold"
+              },
+              {
+                "type": "TextBody",
+                "text": "NGN ${data.recommended_loan_ceiling}"
+              },
+              {
+                "type": "Footer",
+                "label": "Done",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "viewed_passport": true,
+                    "flow_token": "${data.flow_token}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

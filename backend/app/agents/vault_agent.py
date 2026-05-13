@@ -9,6 +9,7 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.vault import Vault
 from app.services.whatsapp_client import send_text
+from app.services.whatsapp_flows import send_passport_flow
 from app.utils.formatters import format_naira
 from app.utils.pii_scrubber import scrub
 
@@ -83,6 +84,18 @@ async def handle_score(whatsapp_no: str, session: dict):
     if not score:
         message = "Your score is not ready yet. Keep receiving verified payments to build it."
     else:
+        sent = await send_passport_flow(
+            whatsapp_no,
+            session,
+            {
+                "full_name": user.full_name,
+                "trader_score": float(score.trader_score or 0),
+                "credit_grade": score.credit_grade or "D",
+                "recommended_loan_ceiling": float(score.recommended_loan_ceiling or 0),
+            },
+        )
+        if sent:
+            return
         message = (
             f"Your AAJE score is {score.trader_score:.1f}, grade {score.credit_grade}. "
             f"Suggested credit threshold: {format_naira(score.recommended_loan_ceiling or 0)}."

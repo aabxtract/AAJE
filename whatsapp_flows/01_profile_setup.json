@@ -1,0 +1,126 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "screens": [
+    {
+      "id": "START",
+      "title": "AAJE Setup",
+      "terminal": true,
+      "data": {
+        "business_types": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "Market Trader",
+              "title": "Market Trader"
+            },
+            {
+              "id": "Food Vendor",
+              "title": "Food Vendor"
+            },
+            {
+              "id": "Shop Owner",
+              "title": "Shop Owner"
+            },
+            {
+              "id": "Artisan",
+              "title": "Artisan"
+            },
+            {
+              "id": "Other",
+              "title": "Other"
+            }
+          ]
+        },
+        "flow_token": {
+          "type": "string",
+          "__example__": "onboarding_profile:example-token"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "profile_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Personal Details"
+              },
+              {
+                "type": "TextInput",
+                "name": "full_name",
+                "label": "Full Name",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "location",
+                "label": "Market / Town",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "Dropdown",
+                "name": "business_type",
+                "label": "Business Type",
+                "required": true,
+                "data-source": "${data.business_types}"
+              },
+              {
+                "type": "TextHeading",
+                "text": "Bank Details"
+              },
+              {
+                "type": "TextBody",
+                "text": "Where should your money go when you withdraw?"
+              },
+              {
+                "type": "TextInput",
+                "name": "bank_name",
+                "label": "Bank Name (e.g. GTBank, Kuda)",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "account_number",
+                "label": "10-Digit Account Number",
+                "input-type": "number",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "Continue",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "full_name": "${form.full_name}",
+                    "location": "${form.location}",
+                    "business_type": "${form.business_type}",
+                    "bank_name": "${form.bank_name}",
+                    "account_number": "${form.account_number}",
+                    "flow_token": "${data.flow_token}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

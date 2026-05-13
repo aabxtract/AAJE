@@ -51,6 +51,26 @@ async def clear_session(whatsapp_no: str):
     await redis.delete(f"session:{whatsapp_no}")
 
 
+async def save_flow_session(token: str, data: dict):
+    """Save browser Flow session metadata with 30-minute TTL."""
+    await redis.setex(
+        f"flow_session:{token}",
+        1800,
+        json.dumps(data),
+    )
+
+
+async def get_flow_session(token: str) -> dict | None:
+    data = await redis.get(f"flow_session:{token}")
+    if not data:
+        return None
+    return json.loads(data) if isinstance(data, str) else data
+
+
+async def clear_flow_session(token: str):
+    await redis.delete(f"flow_session:{token}")
+
+
 async def increment_pin_attempts(whatsapp_no: str) -> int:
     """Increment PIN attempt counter. 10-minute TTL window."""
     key = f"pin_attempts:{whatsapp_no}"
