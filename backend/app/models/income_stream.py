@@ -9,9 +9,10 @@ from app.database import Base
 
 class IncomeStream(Base):
     __tablename__ = "income_streams"
+    __table_args__ = {"schema": "public"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("public.users.id", ondelete="CASCADE"), nullable=False)
     stream_name = Column(String(100), nullable=False)
     stream_type = Column(String(50))
     squad_account_id = Column(String(100))

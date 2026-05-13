@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 from html import escape
+import json
 import logging
 from urllib.parse import quote
 
@@ -12,6 +13,9 @@ from app.redis import set_rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+FLOW_ENDPOINT_FIELDS = {"encrypted_flow_data", "encrypted_aes_key", "initial_vector"}
 
 
 def _mask_sender(sender: str | None) -> str:
@@ -122,6 +126,21 @@ async def process_message_safe(sender: str, message: str):
             logger.exception("Failed to send fallback error message to %s", sender)
 
 
+async def process_flow_response_safe(sender: str, flow_response: dict):
+    try:
+        from app.services.session import route_flow_response
+
+        await route_flow_response(sender, flow_response)
+    except Exception:
+        logger.exception("Flow response processing failed for %s", sender)
+        try:
+            from app.services.whatsapp_client import send_text
+
+            await send_text(sender, "Something went wrong with that secure screen. Please try again.")
+        except Exception:
+            logger.exception("Failed to send fallback flow error message to %s", sender)
+
+
 @router.get("/webhook/whatsapp", response_class=PlainTextResponse)
 async def verify_whatsapp_webhook(
     hub_mode: str = Query(alias="hub.mode"),
@@ -148,6 +167,19 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
     data = await request.json()
+    if FLOW_ENDPOINT_FIELDS.issubset(data):
+        from app.routes.whatsapp_flow_endpoint import handle_encrypted_flow_request
+        from app.services.whatsapp_flow_crypto import FlowCryptoError
+
+        try:
+            encrypted_response = handle_encrypted_flow_request(data)
+            return PlainTextResponse(encrypted_response)
+        except FlowCryptoError as exc:
+            logger.warning("Rejected Flow request sent to WhatsApp webhook URL: %s", exc)
+            raise HTTPException(status_code=421, detail="Could not decrypt Flow request") from exc
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+
     value = (
         data.get("entry", [{}])[0]
         .get("changes", [{}])[0]
@@ -161,6 +193,23 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     message = messages[0]
     sender = message.get("from")
     message_type = message.get("type")
+    if sender and message_type == "interactive":
+        from app.services.whatsapp_flows import extract_flow_response
+
+        flow_response = extract_flow_response(message)
+        if flow_response:
+            count = await set_rate_limit(sender)
+            if count > 10:
+                from app.services.whatsapp_client import send_text
+
+                logger.warning("Rate limited WhatsApp sender %s", _mask_sender(sender))
+                await send_text(sender, "Please slow down. Try again in a minute.")
+                return {"status": "rate_limited"}
+
+            logger.info("Received WhatsApp Flow response from %s; queued processing", _mask_sender(sender))
+            background_tasks.add_task(process_flow_response_safe, sender, flow_response)
+            return {"status": "received"}
+
     if not sender or message_type != "text":
         logger.info(
             "Ignored WhatsApp message: sender=%s type=%s",

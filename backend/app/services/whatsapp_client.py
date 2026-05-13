@@ -33,15 +33,21 @@ async def _post(payload: dict) -> dict:
 async def send_translated(to: str, message: str, language: str = "en") -> dict:
     """
     Translate ``message`` into the user's chosen language via the LLM,
-    then send it.  Falls back to raw English if translation fails or is
-    not needed (language == 'en').
+    then send it.  Falls back to raw English if translation fails, returns empty,
+    or is not needed (language == 'en').
     """
     from app.intelligence.llm import translate_message  # lazy import avoids circular deps
     translated = await translate_message(message, language)
-    return await send_text(to, translated)
+    # Fallback to original message if translation failed or returned empty
+    final_message = translated if (translated and translated.strip()) else message
+    return await send_text(to, final_message)
 
 
 async def send_text(to: str, message: str) -> dict:
+    if not message or not message.strip():
+        logger.warning("Attempted to send empty text to %s, skipping", to)
+        return {"status": "skipped_empty"}
+    
     return await _post({
         "messaging_product": "whatsapp",
         "to": to,
@@ -66,6 +72,42 @@ async def send_cta_button(to: str, body: str, button_label: str, url: str) -> di
             "action": {
                 "name": "cta_url",
                 "parameters": {"display_text": button_label, "url": url},
+            },
+        },
+    })
+
+
+async def send_flow(
+    to: str,
+    body: str,
+    flow_id: str,
+    flow_token: str,
+    cta: str,
+    screen: str = "START",
+    data: dict | None = None,
+) -> dict:
+    payload = {"screen": screen}
+    if data:
+        payload["data"] = data
+
+    return await _post({
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "flow",
+            "body": {"text": body},
+            "action": {
+                "name": "flow",
+                "parameters": {
+                    "mode": "published",
+                    "flow_message_version": "3",
+                    "flow_id": flow_id,
+                    "flow_token": flow_token,
+                    "flow_cta": cta,
+                    "flow_action": "navigate",
+                    "flow_action_payload": payload,
+                },
             },
         },
     })

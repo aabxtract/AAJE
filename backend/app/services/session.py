@@ -26,7 +26,7 @@ _STAGE_REPROMPT: dict[str, str] = {
         "Let's go back ↩\n\n"
         "Choose your language:\n1. Yoruba\n2. Igbo\n3. Hausa\n4. Pidgin\n5. English"
     ),
-    "COLLECTING_NAME": "Let's go back ↩\n\nWhat is your full name?",
+    "COLLECTING_NAME": "Let's go back ↩\n\nWhat is your full name?\nExample: Adebayo Olusegun Okonkwo",
     "COLLECTING_LOCATION": "Let's go back ↩\n\nWhat market or town do you trade in?",
     "COLLECTING_BUSINESS_TYPE": (
         "Let's go back ↩\n\nWhat type of business do you run?\n"
@@ -64,16 +64,19 @@ _STAGE_REPROMPT: dict[str, str] = {
 _ONBOARDING_STAGE_ORDER = [
     "NEW",
     "SELECTING_LANGUAGE",
+    "AWAITING_PROFILE_FLOW",
     "COLLECTING_NAME",
     "COLLECTING_LOCATION",
     "COLLECTING_BUSINESS_TYPE",
     "COLLECTING_ACCOUNT",
     "CONFIRMING_IDENTITY",
     "CONNECTING_BANK",
+    "AWAITING_BUSINESS_FLOW",
     "COLLECTING_STREAM_COUNT",
     "COLLECTING_STREAM_NAMES",
     "CREATING_ACCOUNTS",
     "CONFIGURING_SPLITS",
+    "AWAITING_PIN_SETUP_FLOW",
     "CREATING_PIN",
     "CONFIRMING_PIN",
     "POLICY_ACCEPTANCE",
@@ -83,6 +86,7 @@ _ONBOARDING_STAGE_ORDER = [
 # (i.e. the data that was collected *during* that stage)
 _CLEAR_ON_BACK_FROM: dict[str, list[str]] = {
     "SELECTING_LANGUAGE":       ["language"],
+    "AWAITING_PROFILE_FLOW":    ["full_name", "location", "business_type"],
     "COLLECTING_NAME":          ["full_name"],
     "COLLECTING_LOCATION":      ["location"],
     "COLLECTING_BUSINESS_TYPE": ["business_type"],
@@ -95,10 +99,12 @@ _CLEAR_ON_BACK_FROM: dict[str, list[str]] = {
         "squad_customer_id",
     ],
     "CONNECTING_BANK":          [],           # no pending_data written here
+    "AWAITING_BUSINESS_FLOW":   ["stream_count", "streams"],
     "COLLECTING_STREAM_COUNT":  ["stream_count", "streams"],
     "COLLECTING_STREAM_NAMES":  ["streams"],
     "CREATING_ACCOUNTS":        ["streams"],  # will be recreated
     "CONFIGURING_SPLITS":       ["split_index"],
+    "AWAITING_PIN_SETUP_FLOW":  ["pin_hash"],
     "CREATING_PIN":             ["pin_hash"],
     "CONFIRMING_PIN":           ["pin_hash"],
     "POLICY_ACCEPTANCE":        [],
@@ -156,6 +162,41 @@ HELP_TEXT = (
     "🙋 *human* — speak to a team member\n"
     "↩️ *back* — go back to the previous step (during setup)"
 )
+
+
+async def route_flow_response(whatsapp_no: str, flow_response: dict):
+    session = await get_session(whatsapp_no)
+    pending_flow = session.get("pending_flow") or {}
+    expected_token = pending_flow.get("token")
+    received_token = flow_response.get("flow_token")
+    if expected_token and received_token and expected_token != received_token:
+        logger.warning("Rejected Flow response with mismatched token for %s", whatsapp_no)
+        await send_text(whatsapp_no, "That secure link has expired. Please request a new one.")
+        return
+
+    if session.get("stage") == "LOCKED":
+        await send_translated(
+            whatsapp_no,
+            "Your account is locked after too many wrong PIN attempts. A team member will contact you.",
+            session.get("language", "en"),
+        )
+        return
+
+    if not session.get("onboarding_complete"):
+        from app.agents.onboarding_agent import handle_onboarding_flow
+
+        await handle_onboarding_flow(whatsapp_no, flow_response, session)
+        return
+
+    if pending_flow.get("type") == "pin_confirm":
+        from app.services.pin import handle_pin_input
+
+        data = flow_response.get("data") or {}
+        pin = str(data.get("pin") or "").strip()
+        await handle_pin_input(whatsapp_no, pin, session)
+        return
+
+    await send_text(whatsapp_no, "I received that secure screen. Send *help* to continue.")
 
 
 async def route_message(whatsapp_no: str, message: str):
@@ -260,63 +301,8 @@ async def route_message(whatsapp_no: str, message: str):
         await trigger_escalation(whatsapp_no, message, "frustration", session)
         return
 
-    # 6. Intent-based routing
-    from app.utils.message_parser import detect_intent
+    # 6. Intent-based routing replaced by Agent Reasoning Flow
+    from app.agents.agent_runtime import handle_event
 
-    intent = detect_intent(message)
-    logger.info("Intent '%s' from %s", intent, whatsapp_no)
-
-    if intent == "greeting":
-        from app.utils.phrases import get_phrase
-
-        language = session.get("language", "en")
-        await send_text(whatsapp_no, get_phrase("greeting", language))
-
-    elif intent == "balance":
-        from app.agents.vault_agent import handle_balance_check
-
-        await handle_balance_check(whatsapp_no, session)
-
-    elif intent == "withdraw":
-        from app.agents.withdrawal_agent import handle_withdrawal
-
-        await handle_withdrawal(whatsapp_no, message, session)
-
-    elif intent == "pay":
-        from app.agents.payment_agent import handle_payment
-
-        await handle_payment(whatsapp_no, message, session)
-
-    elif intent == "add_supplier":
-        from app.agents.payment_agent import handle_add_supplier
-
-        await handle_add_supplier(whatsapp_no, message, session)
-
-    elif intent == "summary":
-        from app.agents.vault_agent import handle_summary
-
-        await handle_summary(whatsapp_no, session)
-
-    elif intent == "score":
-        from app.agents.vault_agent import handle_score
-
-        await handle_score(whatsapp_no, session)
-
-    elif intent == "debrief":
-        from app.agents.insight_agent import handle_debrief
-
-        await handle_debrief(whatsapp_no, session)
-
-    elif intent == "support":
-        from app.agents.support_agent import handle_support
-
-        await handle_support(whatsapp_no, message, session)
-
-    elif intent == "help":
-        await send_text(whatsapp_no, HELP_TEXT)
-
-    else:
-        await send_text(
-            whatsapp_no,
-            f"I did not understand that. 🤔\n\n{HELP_TEXT}",
-        )
+    logger.info("Routing message to agent runtime for %s", whatsapp_no)
+    await handle_event(whatsapp_no, message, session)

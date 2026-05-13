@@ -1,0 +1,62 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "screens": [
+    {
+      "id": "START",
+      "title": "Create PIN",
+      "terminal": true,
+      "data": {
+        "flow_token": {
+          "type": "string",
+          "__example__": "pin_setup:example-token"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "pin_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Secure your AAJE account"
+              },
+              {
+                "type": "TextBody",
+                "text": "Create a 4-digit PIN for withdrawals and payments."
+              },
+              {
+                "type": "TextInput",
+                "name": "pin",
+                "label": "4-Digit PIN",
+                "input-type": "password",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "pin_confirm",
+                "label": "Confirm PIN",
+                "input-type": "password",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "Save PIN",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "pin": "${form.pin}",
+                    "pin_confirm": "${form.pin_confirm}",
+                    "flow_token": "${data.flow_token}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

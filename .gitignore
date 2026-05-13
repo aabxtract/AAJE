@@ -8,6 +8,8 @@ venv/
 # Environment
 .env
 backend/.env
+meta_flow_private.pem
+meta_flow_public.pem
 
 # IDE
 .vscode/

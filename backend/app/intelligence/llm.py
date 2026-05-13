@@ -52,7 +52,7 @@ async def categorize_transaction(narration: str, stream_names: list[str]) -> str
 
 
 async def translate_message(text: str, language: str) -> str:
-    if language == "en":
+    if not text or language == "en":
         return text
     language_map = {
         "yo": ("Yoruba", "respectful warm tone"),
@@ -76,9 +76,9 @@ async def translate_message(text: str, language: str) -> str:
                 {
                     "role": "system",
                     "content": (
-                        f"Translate into {language_name}. Use a {tone}. "
-                        "For non-English languages, do not include English in the output. "
-                        "Return only the translated message."
+                        f"You are a professional translator. Translate the given text into {language_name}. "
+                        f"Use a {tone}. Do not add any explanations, prefixes, or notes. "
+                        "Return ONLY the translated text. If you cannot translate it, return the original text."
                     ),
                 },
                 {"role": "user", "content": text},
@@ -86,7 +86,11 @@ async def translate_message(text: str, language: str) -> str:
             temperature=0.2,
             max_tokens=300,
         )
-        return response.choices[0].message.content.strip()
+        translated = response.choices[0].message.content.strip()
+        if not translated:
+            logger.warning("LLM returned empty translation for %s", language)
+            return text
+        return translated
     except Exception:
         logger.exception("Translation failed for language %s", language)
         return text
@@ -114,3 +118,67 @@ async def generate_insight(scrubbed_context: dict) -> str:
     except Exception:
         logger.exception("Insight generation failed")
         return "Keep track of your daily sales to grow your business score."
+
+
+async def agent_reason(message: str, context: dict, available_tools: list[str]) -> dict:
+    """
+    Main brain for the agentic flow. Decides what to do, what tools to call,
+    what matters, and what response to generate based on user state and input.
+    """
+    c = _get_client()
+    if not c:
+        return {
+            "reasoning": "LLM client unavailable.",
+            "tools_to_call": [],
+            "response": "I'm currently unable to process your request due to a connection issue.",
+            "proactive_flags": []
+        }
+
+    system_prompt = """You are an AI financial assistant for informal Nigerian traders.
+You reason over the trader's state, choose actions dynamically, notice financial patterns, and respond proactively.
+You are not a scripted chatbot. You understand the trader's financial situation and help them navigate it.
+
+IMPORTANT IMPLEMENTATION RULES:
+1. NEVER move money automatically without confirmation.
+2. NEVER invent numbers.
+3. NEVER change splits without permission.
+4. You only reason, recommend, observe, and initiate guided actions.
+
+You are given the user's message (or system event), their financial context, and a list of available tools.
+You MUST output ONLY valid JSON in the following format:
+{
+  "reasoning": "your internal monologue about what the user needs and what to do",
+  "tools_to_call": [{"name": "tool_name", "kwargs": {"arg1": "val1"}}],
+  "response": "your textual response to the user, if any (leave empty if just calling tools or no response needed yet)",
+  "proactive_flags": ["list of strings representing proactive insights"]
+}
+
+Available Tool Information:
+- `initiate_withdrawal(stream_name: str, amount: float)`: Triggers a secure PIN entry flow on WhatsApp to confirm withdrawing `amount` from `stream_name`. Use this whenever the user wants to withdraw money.
+- `initiate_payment(supplier_name: str, bank_code: str, account_number: str, amount: float)`: Triggers a secure PIN entry flow to pay a supplier.
+- `send_account_number(stream_name: str)`: Sends the Squad virtual account number to the user.
+- `get_vault_balances()`, `get_recent_transactions(days: int)`, `get_score()`, `generate_insight()`
+"""
+    try:
+        response = await c.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Message/Event: {message}\n\nContext: {context}\n\nAvailable Tools: {available_tools}"},
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+            max_tokens=800,
+        )
+        content = response.choices[0].message.content.strip()
+        import json
+        result = json.loads(content)
+        return result
+    except Exception:
+        logger.exception("Agent reasoning failed")
+        return {
+            "reasoning": "Error occurred during reasoning.",
+            "tools_to_call": [],
+            "response": "I am having trouble thinking right now. Please try again later.",
+            "proactive_flags": []
+        }
