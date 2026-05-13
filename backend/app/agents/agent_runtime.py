@@ -8,11 +8,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
+from app.config import settings
 from app.models.user import User
 from app.models.vault import Vault
 from app.models.income_stream import IncomeStream
 from app.models.transaction import Transaction
-from app.intelligence.llm import agent_reason
+from app.intelligence.agent import agent_reason
+from app.intelligence.context_builder import build_context, determine_persona
+from app.intelligence import tools as intelligence_tools
 from app.intelligence.refinery import compute_score
 from app.services.whatsapp_client import send_text, send_translated
 from app.utils.pii_scrubber import scrub
@@ -201,35 +204,62 @@ async def handle_event(whatsapp_no: str, message_or_event: str, session: dict = 
             logger.warning(f"User {whatsapp_no} not found for agent routing.")
             return
 
-        context = await load_trader_context(user, db)
-        tools_list = list(AVAILABLE_TOOLS_MAP.keys())
+        persona = await determine_persona(db, user)
+        context = await build_context(db, user, persona)
+        tools_list = intelligence_tools.AVAILABLE_TOOL_NAMES
 
         # 1. Agent Reasoning
         decision = await agent_reason(message_or_event, context, tools_list)
         logger.info("Agent decision for %s: %s", whatsapp_no, decision)
 
-        # 2. Proactive Actions / Tools Execution
-        # We can dynamically execute the tools requested by the agent
+        # 2. Proactive Actions / Tools Execution through Squad Intelligence tools.
         tools_to_call = decision.get("tools_to_call", [])
+        tool_results = []
         if tools_to_call:
             logger.info("Executing tools: %s", tools_to_call)
             for t in tools_to_call:
-                t_name = t.get("name")
-                t_kwargs = t.get("kwargs", {})
-                if t_name in AVAILABLE_TOOLS_MAP:
-                    t_kwargs["user_id"] = str(user.id)
-                    t_kwargs["whatsapp_no"] = whatsapp_no
-                    t_kwargs["session"] = session or {}
-                    t_kwargs["db"] = db
-                    try:
-                        sig = inspect.signature(AVAILABLE_TOOLS_MAP[t_name])
-                        valid_kwargs = {k: v for k, v in t_kwargs.items() if k in sig.parameters}
-                        res = await AVAILABLE_TOOLS_MAP[t_name](**valid_kwargs)
-                        logger.info("Tool %s returned: %s", t_name, res)
-                    except Exception as e:
-                        logger.exception("Tool %s failed: %s", t_name, e)
+                t_name = t.get("name") if isinstance(t, dict) else str(t)
+                t_kwargs = t.get("kwargs", {}) if isinstance(t, dict) else {}
+                if not hasattr(intelligence_tools, t_name):
+                    continue
+                tool = getattr(intelligence_tools, t_name)
+                try:
+                    sig = inspect.signature(tool)
+                    if "db" in sig.parameters:
+                        t_kwargs["db"] = db
+                    if "user_id" in sig.parameters:
+                        t_kwargs["user_id"] = str(user.id)
+                    if "store_id" in sig.parameters and context.get("store"):
+                        t_kwargs["store_id"] = context["store"]["id"]
+                    valid_kwargs = {k: v for k, v in t_kwargs.items() if k in sig.parameters}
+                    res = await tool(**valid_kwargs)
+                    tool_results.append((t_name, res))
+                    logger.info("Tool %s returned: %s", t_name, res)
+                except Exception as e:
+                    logger.exception("Tool %s failed: %s", t_name, e)
 
         # 3. Response Generation
         response_text = decision.get("response", "")
+        if tool_results:
+            response_text = _merge_tool_result_response(response_text, tool_results)
         if response_text:
             await send_translated(whatsapp_no, response_text, user.preferred_language or "en")
+
+
+def _merge_tool_result_response(response_text: str, tool_results: list[tuple[str, object]]) -> str:
+    name, result = tool_results[-1]
+    if name == "generate_store_insight" and isinstance(result, str):
+        return result
+    if name == "get_top_products" and isinstance(result, list):
+        if not result:
+            return "I do not have enough product sales data yet."
+        lines = [f"{index + 1}. {item['name']}: NGN {item['sales']:,.2f}" for index, item in enumerate(result)]
+        return "Top products:\n" + "\n".join(lines)
+    if name == "get_bizprint":
+        return f"Your latest BizPrint summary: {result or 'not enough verified data yet'}"
+    if name == "initiate_withdrawal" and isinstance(result, dict):
+        token = result.get("flow_token")
+        base = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
+        link = f"{base}/flow?token={token}" if token else ""
+        return f"Secure withdrawal flow created. Complete PIN confirmation here: {link}\n\nNo money leaves AAJE without your PIN."
+    return response_text

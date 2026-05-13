@@ -13,6 +13,7 @@ class Score(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     trader_score = Column(Float, default=0)
+    data_quality = Column(String(30), default="low")
     credit_grade = Column(String(5))
     consistency_score = Column(Float, default=0)
     volume_score = Column(Float, default=0)

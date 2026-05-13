@@ -5,6 +5,17 @@ from app.models.score import Score
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.vault import Vault
+from app.models.commerce import InventoryMovement, Order, OrderItem, Product, Store
+from app.models.intelligence import (
+    AuditLog,
+    BizPrintSnapshot,
+    Consent,
+    Event,
+    FlowSession,
+    LedgerEntry,
+    ScoreEvent,
+)
+from app.models.money import FailedTransfer, MonoTransaction, Supplier, VirtualAccount, Wallet
 
 __all__ = [
     "User",
@@ -14,4 +25,21 @@ __all__ = [
     "Score",
     "Escalation",
     "NotificationLog",
+    "Store",
+    "Product",
+    "Order",
+    "OrderItem",
+    "InventoryMovement",
+    "Event",
+    "LedgerEntry",
+    "FlowSession",
+    "Consent",
+    "ScoreEvent",
+    "BizPrintSnapshot",
+    "AuditLog",
+    "VirtualAccount",
+    "Wallet",
+    "Supplier",
+    "MonoTransaction",
+    "FailedTransfer",
 ]

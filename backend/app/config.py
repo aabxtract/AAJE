@@ -9,6 +9,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 class Settings(BaseSettings):
     app_env: str = "development"
     app_public_url: str = ""
+    frontend_url: str = ""
     whatsapp_bot_number: str = ""
 
     meta_app_id: str
@@ -48,6 +49,9 @@ class Settings(BaseSettings):
     groq_api_key: str
     admin_token: str
     secret_key: str
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_hours: int = 168
 
     class Config:
         env_file = BASE_DIR / ".env"

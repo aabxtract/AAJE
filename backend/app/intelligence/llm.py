@@ -10,6 +10,39 @@ logger = logging.getLogger(__name__)
 client = AsyncGroq(api_key=settings.groq_api_key)
 MODEL = "openai/gpt-oss-120b"
 
+STATIC_TRANSLATIONS = {
+    "What is your full name?\nExample: Adebayo Olusegun Okonkwo": {
+        "yo": "Kí ni orúkọ rẹ pátápátá?\nÀpẹẹrẹ: Adebayo Olusegun Okonkwo",
+        "ig": "Kedu aha gị zuru ezu?\nIhe atụ: Adebayo Olusegun Okonkwo",
+        "ha": "Menene cikakken sunanka?\nMisali: Adebayo Olusegun Okonkwo",
+        "pcm": "Wetin be your full name?\nExample: Adebayo Olusegun Okonkwo",
+    },
+    "What is your full name?": {
+        "yo": "Kí ni orúkọ rẹ pátápátá?",
+        "ig": "Kedu aha gị zuru ezu?",
+        "ha": "Menene cikakken sunanka?",
+        "pcm": "Wetin be your full name?",
+    },
+    "What market or town do you trade in?": {
+        "yo": "Ọjà tàbí ìlú wo ni o ti ń ṣòwò?",
+        "ig": "Kedu ahịa ma ọ bụ obodo ị na-azụ ahịa na ya?",
+        "ha": "A wane kasuwa ko gari kake/kike kasuwanci?",
+        "pcm": "Which market or town you dey sell for?",
+    },
+    "Please reply with 1, 2, 3, 4, or 5.": {
+        "yo": "Jọ̀wọ́ dáhùn pẹ̀lú 1, 2, 3, 4, tàbí 5.",
+        "ig": "Biko zaa na 1, 2, 3, 4, ma ọ bụ 5.",
+        "ha": "Don Allah ka/kika amsa da 1, 2, 3, 4, ko 5.",
+        "pcm": "Abeg reply with 1, 2, 3, 4, or 5.",
+    },
+    "Creating your Squad accounts now...": {
+        "yo": "A ń dá àwọn àkọọlẹ Squad rẹ sílẹ̀ báyìí...",
+        "ig": "Anyị na-emepụta akaụntụ Squad gị ugbu a...",
+        "ha": "Muna ƙirƙirar asusun Squad ɗinka yanzu...",
+        "pcm": "We dey create your Squad accounts now...",
+    },
+}
+
 
 def _get_client() -> Optional[AsyncGroq]:
     global client
@@ -52,6 +85,7 @@ async def categorize_transaction(narration: str, stream_names: list[str]) -> str
 
 
 async def translate_message(text: str, language: str) -> str:
+    language = (language or "en").lower()
     if not text or language == "en":
         return text
     language_map = {
@@ -63,11 +97,14 @@ async def translate_message(text: str, language: str) -> str:
     target = language_map.get(language)
     if not target:
         return text
+    static = STATIC_TRANSLATIONS.get(text, {}).get(language)
+    if static:
+        return static
     c = _get_client()
     if not c:
         # No API key available — fallback to English text to avoid crashing.
         logger.warning("Groq client unavailable; returning English fallback for translation to %s", language)
-        return text
+        return static or text
     language_name, tone = target
     try:
         response = await c.chat.completions.create(
@@ -89,11 +126,11 @@ async def translate_message(text: str, language: str) -> str:
         translated = response.choices[0].message.content.strip()
         if not translated:
             logger.warning("LLM returned empty translation for %s", language)
-            return text
+            return static or text
         return translated
     except Exception:
         logger.exception("Translation failed for language %s", language)
-        return text
+        return static or text
 
 
 async def generate_insight(scrubbed_context: dict) -> str:

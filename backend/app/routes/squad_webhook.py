@@ -25,10 +25,13 @@ from app.intelligence.llm import categorize_transaction
 from app.intelligence.pii_scrubber import scrub
 from app.intelligence.refinery import compute_score
 from app.models.income_stream import IncomeStream
+from app.models.commerce import Order, Store
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.services.events import emit_event
 from app.services.notifier import notify_anomaly, notify_split
 from app.services.slicer import split_incoming_payment
+from app.services.squad import transfer
 from app.utils.formatters import format_naira
 
 logger = logging.getLogger(__name__)
@@ -115,6 +118,51 @@ async def squad_webhook(request: Request):
         if existing.scalar_one_or_none():
             logger.info("Squad webhook duplicate: %s", reference)
             return {"status": "duplicate"}
+
+        storefront_result = await db.execute(
+            select(Store).where(Store.squad_virtual_account_number == str(account_number))
+        )
+        store = storefront_result.scalar_one_or_none()
+        if store:
+            order_result = await db.execute(
+                select(Order).where(Order.squad_payment_reference == reference)
+            )
+            order = order_result.scalar_one_or_none()
+            gross_amount = Decimal(str(amount_kobo)) / Decimal("100")
+            fee = DEPOSIT_FEE if gross_amount > DEPOSIT_FEE else Decimal("0")
+            net_amount = gross_amount - fee
+            if fee:
+                try:
+                    await transfer(
+                        float(fee),
+                        settings.squad_revenue_bank_code,
+                        settings.squad_revenue_account,
+                        "AAJE Revenue",
+                        "AAJE storefront payment fee",
+                        f"FEE-{reference}",
+                    )
+                except Exception:
+                    logger.exception("Storefront fee transfer failed for ref %s", reference)
+            event = await emit_event(db, {
+                "event_type": "payment_confirmed",
+                "source": "squad",
+                "user_id": str(store.user_id),
+                "store_id": str(store.id),
+                "order_id": str(order.id) if order else None,
+                "amount": float(net_amount),
+                "reference": reference,
+                "metadata": {
+                    "gross_amount": float(gross_amount),
+                    "aaje_fee": float(fee),
+                    "net_amount": float(net_amount),
+                    "account_number": account_number,
+                    "narration": narration,
+                    "raw_payload": payload,
+                },
+                "idempotency_key": f"squad:{reference}",
+            })
+            await db.commit()
+            return {"status": "processed", "event_id": str(event.id), "mode": "storefront"}
 
         # 2. Find the inbound stream
         stream_result = await db.execute(
