@@ -5,10 +5,11 @@ import json
 import logging
 from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Depends
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from app.config import settings
+from app.database import get_db
 from app.redis import set_rate_limit
 
 logger = logging.getLogger(__name__)
@@ -837,3 +838,71 @@ async def mono_mock_connect(reference: str = ""):
   </body>
 </html>
 """
+
+
+@router.post("/api/whatsapp/settings")
+async def whatsapp_settings(payload: dict, db=Depends(get_db)):
+  """Update user's WhatsApp number and notification preferences.
+
+  Expected payload: {"user_id": "...", "whatsapp_no": "234...", "daily_summary": true, "order_notifications": true}
+  """
+  # lazy import to avoid circular deps
+  from app.models.user import User
+  session = db
+  user = await session.get(User, payload.get("user_id"))
+  if not user:
+    raise HTTPException(status_code=404, detail="User not found")
+  if payload.get("whatsapp_no"):
+    user.whatsapp_no = payload.get("whatsapp_no")
+    user.whatsapp_connected = True
+  if "daily_summary" in payload:
+    user.whatsapp_daily_summary = bool(payload.get("daily_summary"))
+  if "order_notifications" in payload:
+    user.whatsapp_order_notifications = bool(payload.get("order_notifications"))
+  return {"status": "updated", "user": {"id": str(user.id), "whatsapp_no": user.whatsapp_no}}
+
+
+@router.post("/api/whatsapp/send")
+async def whatsapp_send(payload: dict, db=Depends(get_db)):
+  from app.whatsapp.service import send_text
+  user_id = payload.get("user_id")
+  to = payload.get("to")
+  message = payload.get("message")
+  if not message:
+    raise HTTPException(status_code=400, detail="message is required")
+  if not to and not user_id:
+    raise HTTPException(status_code=400, detail="to or user_id is required")
+  if not to and user_id:
+    from app.models.user import User
+    user = await db.get(User, user_id)
+    if not user or not user.whatsapp_no:
+      raise HTTPException(status_code=404, detail="User or whatsapp number not found")
+    to = user.whatsapp_no
+  result = await send_text(to, message)
+  return {"status": "sent", "result": result}
+
+
+@router.post("/api/whatsapp/send-daily-summary")
+async def whatsapp_send_daily_summary(payload: dict, db=Depends(get_db)):
+  # payload: {"user_id": "...", "store_id": "..."}
+  from app.database import get_db
+  from app.models.user import User
+  from app.models.commerce import Order
+  from sqlalchemy import select
+  from datetime import datetime, timezone
+
+  user_id = payload.get("user_id")
+  store_id = payload.get("store_id")
+  if not user_id or not store_id:
+    raise HTTPException(status_code=400, detail="user_id and store_id required")
+  user = await db.get(User, user_id)
+  if not user or not user.whatsapp_no:
+    raise HTTPException(status_code=404, detail="User or whatsapp number not found")
+  today = datetime.now(timezone.utc).date()
+  rows = (await db.execute(select(Order).where(Order.store_id == store_id, Order.created_at >= datetime(today.year, today.month, today.day, tzinfo=timezone.utc)))).scalars().all()
+  total_sales = sum([float(r.total_amount or 0) for r in rows])
+  orders_count = len(rows)
+  message = f"Daily sales summary for store {store_id}: Orders: {orders_count}, Total: NGN {total_sales:.2f}"
+  from app.whatsapp.service import send_text
+  await send_text(user.whatsapp_no, message)
+  return {"status": "queued", "orders": orders_count, "total": total_sales}
