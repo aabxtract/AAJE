@@ -1,10 +1,12 @@
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import JSON, Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 
 from app.database import Base
+
+JSON_TYPE = JSON().with_variant(JSONB, "postgresql")
 
 
 class Store(Base):
@@ -14,15 +16,15 @@ class Store(Base):
         CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]*$'", name="ck_stores_slug_url_safe"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     store_name = Column(String(150), nullable=False)
     slug = Column(String(180), unique=True, nullable=False)
     store_slug = Column(String(180), unique=True)
     description = Column(Text)
     store_description = Column(Text)
     tagline = Column(String(255))
-    theme_json = Column(JSONB, default=dict)
+    theme_json = Column(JSON_TYPE, default=dict)
     theme = Column(String(50), default="default")
     contact_whatsapp = Column(String(20))
     whatsapp_number = Column(String(20))
@@ -37,9 +39,9 @@ class Store(Base):
 class Product(Base):
     __tablename__ = "products"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    store_id = Column(UUID(as_uuid=True), ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    store_id = Column(Uuid(as_uuid=True), ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     name = Column(String(150), nullable=False)
     description = Column(Text)
     category = Column(String(100))
@@ -58,9 +60,9 @@ class Product(Base):
 class Order(Base):
     __tablename__ = "orders"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    store_id = Column(UUID(as_uuid=True), ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    store_id = Column(Uuid(as_uuid=True), ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     customer_name = Column(String(120))
     customer_phone = Column(String(20))
     customer_whatsapp = Column(String(20))
@@ -82,9 +84,9 @@ class Order(Base):
 class OrderItem(Base):
     __tablename__ = "order_items"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    order_id = Column(UUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(Uuid(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(Uuid(as_uuid=True), ForeignKey("products.id"), nullable=False)
     product_name = Column(String(200))
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Numeric(12, 2), nullable=False)
@@ -95,11 +97,11 @@ class OrderItem(Base):
 class InventoryMovement(Base):
     __tablename__ = "inventory_movements"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    store_id = Column(UUID(as_uuid=True), ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    store_id = Column(Uuid(as_uuid=True), ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(Uuid(as_uuid=True), ForeignKey("products.id"), nullable=False)
     movement_type = Column(String(30), nullable=False)
     quantity = Column(Integer, nullable=False)
     reason = Column(String(120))
-    related_order_id = Column(UUID(as_uuid=True), ForeignKey("orders.id"))
+    related_order_id = Column(Uuid(as_uuid=True), ForeignKey("orders.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())

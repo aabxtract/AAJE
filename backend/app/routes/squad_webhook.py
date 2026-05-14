@@ -1,3 +1,31 @@
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.services.squad_payment_service import verify_webhook
+from app.services.order_service import mark_order_paid
+
+router = APIRouter(prefix="/webhooks/squad", tags=["squad_webhooks"])
+
+
+@router.post("/payment")
+async def squad_payment_webhook(req: Request, db: AsyncSession = Depends(get_db)):
+    payload = await req.json()
+    # Basic verification (expand in production)
+    ok = await verify_webhook(payload)
+    if not ok:
+        raise HTTPException(status_code=400, detail="invalid webhook")
+
+    # Expected payload keys: order_id, squad_ref, status
+    order_id = payload.get("order_id")
+    squad_ref = payload.get("squad_ref")
+    status = payload.get("status")
+
+    if status == "paid" and order_id:
+        await mark_order_paid(db, order_id, squad_ref)
+        return {"ok": True}
+
+    return {"ok": False, "reason": "unsupported event"}
 """
 Squad webhook — processes incoming payment notifications from Squad.
 
@@ -5,7 +33,7 @@ When a payment hits one of the trader's Squad virtual accounts:
   1. Validate the signature
   2. Deduplicate by transaction reference
   3. Match to a trader's income stream
-  4. AI-categorize the payment narration
+  4. Record the inbound stream deterministically
   5. Run the slicer to auto-split across vaults
   6. Recompute the trader's score
   7. Notify the trader via WhatsApp
@@ -21,8 +49,6 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import AsyncSessionLocal
-from app.intelligence.llm import categorize_transaction
-from app.intelligence.pii_scrubber import scrub
 from app.intelligence.refinery import compute_score
 from app.models.income_stream import IncomeStream
 from app.models.commerce import Order, Store
@@ -184,29 +210,10 @@ async def squad_webhook(request: Request):
         # 4. Convert from kobo to naira
         amount = Decimal(str(amount_kobo)) / Decimal("100")
 
-        # 5. AI-categorize the narration
-        streams_result = await db.execute(
-            select(IncomeStream).where(IncomeStream.user_id == user.id)
-        )
-        all_streams = streams_result.scalars().all()
-        stream_names = [s.stream_name for s in all_streams]
-
-        scrubbed_narration = scrub({"narration": narration}).get("narration", narration)
-        try:
-            categorized_name = await categorize_transaction(scrubbed_narration, stream_names)
-        except Exception:
-            logger.exception("AI categorization failed, using inbound stream")
-            categorized_name = inbound_stream.stream_name
-
-        categorized_stream = next(
-            (s for s in all_streams if s.stream_name == categorized_name),
-            inbound_stream,
-        )
-
-        # 6. Record the master inbound transaction
+        # 5. Record the master inbound transaction deterministically.
         db.add(Transaction(
             user_id=user.id,
-            stream_id=categorized_stream.id,
+            stream_id=inbound_stream.id,
             amount=amount,
             type="credit",
             narration=narration,
@@ -248,16 +255,19 @@ async def squad_webhook(request: Request):
 
         await db.commit()
 
-    # 9. Notify the trader via agent runtime
-    from app.agents.agent_runtime import handle_event
-    event_message = f"SYSTEM_EVENT: Received payment of {amount} NGN. Narration: '{narration}'. Transaction Ref: {reference}."
-    try:
-        await handle_event(user.whatsapp_no, event_message)
-    except Exception:
-        logger.exception("Agent runtime failed to process squad webhook event for user %s", user.id)
+    # 9. Legacy non-storefront payments no longer enter a WhatsApp AI agent.
+    if user.whatsapp_no:
+        from app.services.whatsapp_client import send_text
+        try:
+            await send_text(
+                user.whatsapp_no,
+                f"Payment received: {format_naira(float(amount))}. Ref: {reference}",
+            )
+        except Exception:
+            logger.exception("Failed to notify user %s about payment %s", user.id, reference)
 
     logger.info(
-        "Squad webhook processed via agent: %s",
+        "Squad webhook processed: %s",
         format_naira(float(amount)),
     )
     return {"status": "processed"}

@@ -1,7 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Numeric, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Numeric, String, Uuid
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -10,10 +9,10 @@ from app.database import Base
 class Vault(Base):
     __tablename__ = "vaults"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    store_id = Column(UUID(as_uuid=True), ForeignKey("stores.id"), nullable=True)
-    stream_id = Column(UUID(as_uuid=True), ForeignKey("income_streams.id"), unique=True)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    store_id = Column(Uuid(as_uuid=True), ForeignKey("stores.id"), nullable=True)
+    stream_id = Column(Uuid(as_uuid=True), ForeignKey("income_streams.id"), unique=True)
     name = Column(String(120), default="Main Vault")
     current_balance = Column(Numeric(12, 2), default=0)
     percentage = Column(Numeric(5, 2), default=0)

@@ -218,8 +218,11 @@ async def _notify_store_sale(db: AsyncSession, order: Order, amount: Decimal, re
     if not store or not store.contact_whatsapp:
         return
     message = (
-        f"Payment confirmed for {store.store_name}: NGN {float(amount):,.2f}. "
-        f"Order {str(order.id)[:8]} is now paid. Ref: {reference}"
+        f"New paid storefront order - {store.store_name}\n"
+        f"Order: {str(order.id)[:8]}\n"
+        f"Amount: NGN {float(amount):,.2f}\n"
+        f"Status: paid. Inventory has been updated.\n"
+        f"Ref: {reference}"
     )
     db.add(NotificationLog(
         user_id=order.user_id,

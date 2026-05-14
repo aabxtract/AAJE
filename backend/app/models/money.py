@@ -1,7 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Numeric, String, Text, Uuid
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -10,8 +9,8 @@ from app.database import Base
 class VirtualAccount(Base):
     __tablename__ = "virtual_accounts"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     account_name = Column(String(100))
     account_number = Column(String(20), unique=True)
     squad_account_id = Column(String(100))
@@ -23,8 +22,8 @@ class VirtualAccount(Base):
 class Wallet(Base):
     __tablename__ = "wallets"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     available_balance = Column(Numeric(12, 2), default=0)
     total_earned = Column(Numeric(12, 2), default=0)
     total_withdrawn = Column(Numeric(12, 2), default=0)
@@ -34,8 +33,8 @@ class Wallet(Base):
 class Supplier(Base):
     __tablename__ = "suppliers"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     alias = Column(String(100))
     bank_name = Column(String(100))
     bank_code = Column(String(10))
@@ -46,8 +45,8 @@ class Supplier(Base):
 class MonoTransaction(Base):
     __tablename__ = "mono_transactions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     amount = Column(Numeric(12, 2))
     type = Column(String(10))
     narration = Column(Text)
@@ -59,8 +58,8 @@ class MonoTransaction(Base):
 class FailedTransfer(Base):
     __tablename__ = "failed_transfers"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
     destination_json = Column(Text)
     reference = Column(String(120), unique=True)

@@ -25,6 +25,8 @@ def _mask_sender(sender: str | None) -> str:
 
 
 def _verify_meta_signature(payload: bytes, signature: str) -> bool:
+    if not settings.meta_app_secret:
+        return False
     if not signature.startswith("sha256="):
         return False
     expected = hmac.new(
@@ -127,18 +129,7 @@ async def process_message_safe(sender: str, message: str):
 
 
 async def process_flow_response_safe(sender: str, flow_response: dict):
-    try:
-        from app.services.session import route_flow_response
-
-        await route_flow_response(sender, flow_response)
-    except Exception:
-        logger.exception("Flow response processing failed for %s", sender)
-        try:
-            from app.services.whatsapp_client import send_text
-
-            await send_text(sender, "Something went wrong with that secure screen. Please try again.")
-        except Exception:
-            logger.exception("Failed to send fallback flow error message to %s", sender)
+    logger.info("Ignored legacy WhatsApp Flow response from %s", _mask_sender(sender))
 
 
 @router.get("/webhook/whatsapp", response_class=PlainTextResponse)
@@ -159,12 +150,18 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     payload = await request.body()
     signature = request.headers.get("x-hub-signature-256", "")
     if not _verify_meta_signature(payload, signature):
-        logger.warning(
-            "Rejected WhatsApp webhook: invalid signature header present=%s payload_bytes=%s",
-            bool(signature),
-            len(payload),
-        )
-        raise HTTPException(status_code=403, detail="Invalid signature")
+        if settings.app_env.lower() != "production" and not settings.meta_app_secret:
+            logger.warning(
+                "Accepted WhatsApp webhook without signature verification because META_APP_SECRET is not set in %s.",
+                settings.app_env,
+            )
+        else:
+            logger.warning(
+                "Rejected WhatsApp webhook: invalid signature header present=%s payload_bytes=%s",
+                bool(signature),
+                len(payload),
+            )
+            raise HTTPException(status_code=403, detail="Invalid signature")
 
     data = await request.json()
     if FLOW_ENDPOINT_FIELDS.issubset(data):
@@ -194,21 +191,8 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     sender = message.get("from")
     message_type = message.get("type")
     if sender and message_type == "interactive":
-        from app.services.whatsapp_flows import extract_flow_response
-
-        flow_response = extract_flow_response(message)
-        if flow_response:
-            count = await set_rate_limit(sender)
-            if count > 10:
-                from app.services.whatsapp_client import send_text
-
-                logger.warning("Rate limited WhatsApp sender %s", _mask_sender(sender))
-                await send_text(sender, "Please slow down. Try again in a minute.")
-                return {"status": "rate_limited"}
-
-            logger.info("Received WhatsApp Flow response from %s; queued processing", _mask_sender(sender))
-            background_tasks.add_task(process_flow_response_safe, sender, flow_response)
-            return {"status": "received"}
+        logger.info("Ignored legacy WhatsApp interactive message from %s", _mask_sender(sender))
+        return {"status": "ignored_legacy_interactive"}
 
     if not sender or message_type != "text":
         logger.info(

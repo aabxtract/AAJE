@@ -7,11 +7,11 @@ from app.intelligence.llm import _get_client, MODEL
 logger = logging.getLogger(__name__)
 
 ALLOWED_TOPICS = {
-    "store", "business", "inventory", "sales", "payment", "payments", "savings",
-    "vault", "vaults", "score", "bizprint", "order", "orders", "withdraw",
-    "withdrawal", "money", "account", "receipt", "report", "stock", "product",
-    "balance", "supplier", "sold", "pending", "link", "analytics",
-    "revenue", "income", "cash", "checkout", "customer", "delivered",
+    "store", "storefront", "business", "inventory", "sales", "payment", "payments",
+    "payout", "payouts", "bizprint", "order", "orders", "withdraw",
+    "withdrawal", "receipt", "report", "stock", "product", "products",
+    "sold", "pending", "link", "analytics", "revenue", "checkout",
+    "customer", "customers", "fulfilled", "delivered", "summary",
     "campaign", "campaigns", "marketing", "growth", "source", "sources",
     "referral", "referrals", "instagram", "whatsapp", "facebook", "tiktok",
 }
@@ -42,7 +42,7 @@ async def agent_reason(event, context, available_tools):
     """
     Return JSON:
     {
-      "persona": "storefront_extension | normal_business_manager",
+      "persona": "storefront_operations",
       "intent": "...",
       "tools_to_call": ["..."],
       "response": "...",
@@ -53,13 +53,13 @@ async def agent_reason(event, context, available_tools):
     }
     """
     message = str(event or "")
-    persona = context.get("persona", "normal_business_manager")
+    persona = context.get("persona", "storefront_operations")
     if _guardrail_reject(message):
         return {
             "persona": persona,
             "intent": "rejected_unrelated",
             "tools_to_call": [],
-            "response": "AAJE only helps with your business, store, payments, savings, score, and financial records.",
+            "response": "AAJE WhatsApp only helps with storefront operations: orders, inventory, sales, withdrawals, campaigns, and BizPrint.",
             "requires_flow": False,
             "flow_type": None,
             "requires_pin": False,
@@ -67,7 +67,7 @@ async def agent_reason(event, context, available_tools):
         }
 
     fallback = _rule_based_reason(message, context)
-    if fallback.get("intent") not in {"storefront_help", "business_help"}:
+    if fallback.get("intent") not in {"storefront_help", "business_help"} or str(message).lower().strip() in {"help", "menu", "start", "hi", "hello"}:
         return fallback
     client = _get_client()
     if not client:
@@ -80,8 +80,12 @@ async def agent_reason(event, context, available_tools):
                 {
                     "role": "system",
                     "content": (
-                        "You are Squad Intelligence for AAJE. Return only valid JSON matching the requested schema. "
-                        "Use tools only from the provided list. Never approve money movement without PIN. "
+                        "You are AAJE's storefront operations assistant on WhatsApp. "
+                        "The storefront is the main product; WhatsApp is reactive and operational. "
+                        "Return only valid JSON matching the requested schema. Use tools only from the provided list. "
+                        "Focus on orders, inventory, sales, withdrawals, campaigns, and BizPrint. "
+                        "Never act like a bank, generic finance bot, AI companion, or payment-first assistant. "
+                        "Never approve money movement without a secure browser flow and PIN. "
                         "Reject unrelated topics with the exact AAJE guardrail sentence."
                     ),
                 },
@@ -111,8 +115,35 @@ async def agent_reason(event, context, available_tools):
 
 def _rule_based_reason(message: str, context: dict) -> dict:
     text = message.lower()
-    persona = context.get("persona", "normal_business_manager")
+    persona = context.get("persona", "storefront_operations")
+    tier = (context.get("whatsapp") or {}).get("tier", "free")
     store = context.get("store")
+    words = set(re.findall(r"[a-z0-9']+", text))
+    is_help = bool(words & {"help", "menu", "start", "hello", "hi"}) or "what can you do" in text
+
+    if tier != "premium":
+        if "store link" in text or "send my store" in text or "link" == text.strip():
+            link = store.get("link") if store else None
+            return _plain(persona, "store_link", f"Your store link is {link}." if link else "You do not have a connected store yet.")
+        if is_help:
+            return _plain(
+                persona,
+                "free_whatsapp_help",
+                "Free WhatsApp is enabled for order/payment alerts, daily sales summaries, and store link sharing. Upgrade to Premium for operational chat: sales questions, inventory updates, order management, withdrawals, campaign analytics, and BizPrint insights.",
+            )
+        return _plain(
+            persona,
+            "premium_required",
+            "That WhatsApp operation is available on Premium. Free WhatsApp still sends order/payment alerts, daily summaries, and your store link.",
+        )
+
+    if is_help:
+        return _plain(
+            persona,
+            "storefront_help",
+            "Ask me about your storefront: store link, what sold today, recent orders, pending orders, low stock, update stock, mark order fulfilled, withdrawals, campaign performance, and BizPrint summary.",
+        )
+
     if any(term in text for term in {"campaign", "marketing", "growth", "source", "sources", "referral", "instagram", "facebook", "tiktok"}) or (
         "where" in text and "customers" in text and "coming" in text
     ) or (
@@ -131,48 +162,50 @@ def _rule_based_reason(message: str, context: dict) -> dict:
         }
     if "withdraw" in text:
         amount = _amount_from_text(text)
+        if not amount or amount <= 0:
+            return _plain(persona, "withdrawal_amount_needed", "Send the withdrawal amount. Example: withdraw 25000.")
         return {
             "persona": persona,
             "intent": "withdrawal",
-            "tools_to_call": [{"name": "initiate_withdrawal", "kwargs": {"amount": amount or 0}}],
+            "tools_to_call": [{"name": "initiate_withdrawal", "kwargs": {"amount": amount}}],
             "response": "I will open a secure withdrawal flow. No money leaves AAJE without your PIN.",
             "requires_flow": True,
             "flow_type": "withdrawal",
             "requires_pin": True,
             "proactive_flags": [],
         }
-    if "balance" in text or "vault" in text:
+    if "payout" in text or "wallet" in text or ("balance" in text and "stock" not in text):
         wallet = context.get("wallet") or {}
         if wallet:
             return _plain(persona, "wallet_balance", f"Your available wallet balance is NGN {wallet.get('available_balance', 0):,.2f}. Total earned: NGN {wallet.get('total_earned', 0):,.2f}.")
-        vaults = context.get("vaults") or []
-        if not vaults:
-            return _plain(persona, "vault_balances", "You do not have vault balances yet.")
-        lines = [f"{v['name']}: NGN {v['balance']:,.2f}" for v in vaults]
-        return _plain(persona, "vault_balances", "\n".join(lines))
-    if persona == "storefront_extension":
-        if "sold today" in text or "sales today" in text or "today" in text:
+        return _plain(persona, "wallet_balance", "Your storefront wallet is not ready yet.")
+    if persona == "storefront_operations":
+        if "sold today" in text or "sales today" in text or ("today" in text and any(term in text for term in {"sold", "sales", "orders", "revenue"})):
             return _answer("today_sales", "generate_store_insight", "I am checking today's store sales now.")
+        if "recent order" in text or "latest order" in text:
+            return _answer("recent_orders", "get_recent_orders", "I am checking your recent orders.")
         if "low" in text and ("stock" in text or "inventory" in text):
-            low = context.get("recent_alerts") or []
-            names = ", ".join(item["product"] for item in low) or "none"
-            return _plain(persona, "low_stock", f"Low-stock products: {names}.")
+            return _answer("low_stock", "get_low_stock_products", "I am checking low-stock products.")
         if "store link" in text or "send my store" in text:
             link = store.get("link") if store else None
             return _plain(persona, "store_link", f"Your store link is {link}." if link else "You do not have a connected store yet.")
         if "pending order" in text:
-            pending = [o for o in context.get("orders", []) if o["payment_status"] != "paid"]
-            return _plain(persona, "pending_orders", f"You have {len(pending)} pending order(s).")
-        if "fastest" in text or "top product" in text:
+            return _answer("pending_orders", "get_pending_orders", "I am checking pending orders.")
+        if "fulfill" in text or "fulfilled" in text:
+            return _answer("mark_order_fulfilled", "mark_order_fulfilled_from_chat", "I am checking that order.")
+        if ("add" in text or "update" in text or "set" in text) and ("stock" in text or "inventory" in text):
+            return _answer("update_inventory", "update_inventory_from_chat", "I am updating inventory from your message.")
+        if "add product" in text or "new product" in text:
+            return _answer("create_product", "create_product_from_chat_message", "I am creating that product from your message.")
+        if "fastest" in text or "top product" in text or "best product" in text:
             return _answer("top_products", "get_top_products", "I am checking your fastest moving products.")
-        return _plain(persona, "storefront_help", "You can ask about sales, pending orders, low stock, store link, withdrawals, vaults, score, and BizPrint.")
+        if "bizprint" in text:
+            return _answer("bizprint", "get_bizprint", "I am pulling your BizPrint summary.")
+        return _plain(persona, "storefront_help", "Ask about store link, sales, recent orders, pending orders, low stock, stock updates, withdrawals, campaign performance, and BizPrint.")
 
-    if "score" in text:
-        score = context.get("score") or {}
-        return _plain(persona, "score", f"Your current score is {score.get('score', 0)} with grade {score.get('grade') or 'not ready yet'}.")
     if "bizprint" in text:
         return _answer("bizprint", "get_bizprint", "I am pulling your BizPrint.")
-    return _plain(persona, "business_help", "You can ask about balances, vaults, payments, withdrawals, score, receipts, reports, and BizPrint.")
+    return _plain(persona, "business_help", "Connect a storefront from your dashboard to use WhatsApp operations.")
 
 
 def _plain(persona: str, intent: str, response: str) -> dict:
@@ -180,4 +213,4 @@ def _plain(persona: str, intent: str, response: str) -> dict:
 
 
 def _answer(intent: str, tool: str, response: str) -> dict:
-    return {"persona": "storefront_extension", "intent": intent, "tools_to_call": [{"name": tool, "kwargs": {}}], "response": response, "requires_flow": False, "flow_type": None, "requires_pin": False, "proactive_flags": []}
+    return {"persona": "storefront_operations", "intent": intent, "tools_to_call": [{"name": tool, "kwargs": {}}], "response": response, "requires_flow": False, "flow_type": None, "requires_pin": False, "proactive_flags": []}

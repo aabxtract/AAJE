@@ -6,12 +6,11 @@ python-dotenv
 pydantic-settings
 sqlalchemy[asyncio]
 asyncpg
-supabase
+aiosqlite
 upstash-redis
 httpx
 cryptography
 passlib[bcrypt]
-groq
 pandas
 numpy
 apscheduler

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.commerce import Order, Product, Store
 from app.models.income_stream import IncomeStream
 from app.models.intelligence import BizPrintSnapshot
@@ -16,8 +17,8 @@ from app.models.vault import Vault
 async def determine_persona(db: AsyncSession, user: User) -> str:
     store = (await db.execute(select(Store).where(Store.user_id == user.id))).scalar_one_or_none()
     if store:
-        return "storefront_extension"
-    return user.persona_mode or "normal_business_manager"
+        return "storefront_operations"
+    return "storefront_unlinked"
 
 
 async def build_context(db: AsyncSession, user: User, persona: str | None = None) -> dict:
@@ -30,11 +31,16 @@ async def build_context(db: AsyncSession, user: User, persona: str | None = None
             "phone": user.whatsapp_no,
             "language": user.preferred_language or "en",
         },
+        "whatsapp": {
+            "connected": bool(user.whatsapp_connected),
+            "tier": "premium" if "premium" in (user.persona_mode or "") else "free",
+            "role": "storefront_operations_extension",
+        },
     }
-    if persona == "storefront_extension":
+    if persona == "storefront_operations":
         base.update(await _storefront_context(db, user))
     else:
-        base.update(await _business_manager_context(db, user))
+        base.update({"store": None, "products": [], "orders": [], "sales": {}, "recent_alerts": []})
     return base
 
 
@@ -59,12 +65,15 @@ async def _storefront_context(db: AsyncSession, user: User) -> dict:
         order for order in orders
         if order.payment_status == "paid" and order.paid_at and order.paid_at.date() == today
     ]
+    public_base = (settings.frontend_url or settings.app_public_url or "").rstrip("/")
+    store_path = f"/{store.slug}"
+    store_link = f"{public_base}{store_path}" if public_base else store_path
     return {
         "store": {
             "id": str(store.id),
             "name": store.store_name,
             "slug": store.slug,
-            "link": f"/{store.slug}",
+            "link": store_link,
             "has_squad_account": store.has_squad_account,
             "squad_virtual_account_number": store.squad_virtual_account_number,
         },

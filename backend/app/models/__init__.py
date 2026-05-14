@@ -6,6 +6,8 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.vault import Vault
 from app.models.commerce import InventoryMovement, Order, OrderItem, Product, Store
+
+# Core local models
 from app.models.intelligence import (
     AuditLog,
     BizPrintSnapshot,

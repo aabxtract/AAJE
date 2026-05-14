@@ -1,296 +1,390 @@
 """
-Session router — the central hub that receives every inbound WhatsApp message
-and dispatches it to the correct agent based on session state and intent.
+WhatsApp storefront operations router.
 
-Routing priority:
-  1. Locked / Escalated → block
-  2. Not onboarded → onboarding agent
-  3. Awaiting PIN → PIN handler
-  4. Frustration detected → escalation
-  5. Intent-based routing → balance, withdraw, pay, summary, score, debrief, support, help
+This is a clean replacement for the old WhatsApp bot flow. It does not run AI
+reasoning, onboarding, vault flows, supplier payments, or chat-based banking.
+WhatsApp is only an operational extension of the AAJE storefront.
 """
-import logging
+from __future__ import annotations
 
-from app.redis import clear_session, clear_state_history, get_session, pop_state_history, save_session
-from app.services.whatsapp_client import send_text, send_translated
+import re
+from datetime import datetime, timezone
+from decimal import Decimal
 
-logger = logging.getLogger(__name__)
+from sqlalchemy import func, select
+
+from app.config import settings
+from app.database import AsyncSessionLocal
+from app.models.commerce import InventoryMovement, Order, OrderItem, Product, Store
+from app.models.intelligence import BizPrintSnapshot
+from app.models.marketing import CampaignConversion, CampaignLink, CampaignVisit
+from app.models.money import Wallet
+from app.models.user import User
+from app.redis import clear_session, clear_state_history, get_session, save_session
+from app.services.flows import create_flow_session
+from app.services.storefront import create_product
+from app.services.whatsapp_client import send_text
 
 RESET_COMMANDS = {"restart", "reset", "start over", "start again", "begin again"}
-
 BACK_COMMANDS = {"back", "undo", "go back", "previous", "prev", "return"}
 
-# Prompt to re-send when the user lands back on a given stage
-_STAGE_REPROMPT: dict[str, str] = {
-    "SELECTING_LANGUAGE": (
-        "Let's go back ↩\n\n"
-        "Choose your language:\n1. Yoruba\n2. Igbo\n3. Hausa\n4. Pidgin\n5. English"
-    ),
-    "COLLECTING_NAME": "Let's go back ↩\n\nWhat is your full name?\nExample: Adebayo Olusegun Okonkwo",
-    "COLLECTING_LOCATION": "Let's go back ↩\n\nWhat market or town do you trade in?",
-    "COLLECTING_BUSINESS_TYPE": (
-        "Let's go back ↩\n\nWhat type of business do you run?\n"
-        "1. Market Trader\n2. Food Vendor\n3. Shop Owner\n4. Artisan\n5. Other"
-    ),
-    "COLLECTING_ACCOUNT": (
-        "Let's go back ↩\n\nEnter your account number and bank.\n"
-        "Example: 0123456789 GTBank"
-    ),
-    "CONFIRMING_IDENTITY": (
-        "Let's go back ↩\n\nEnter your account number and bank again.\n"
-        "Example: 0123456789 GTBank"
-    ),
-    "CONNECTING_BANK": (
-        "Let's go back ↩\n\nTap *Connect Bank* to link your account, "
-        "or reply *skip* to continue without it."
-    ),
-    "COLLECTING_STREAM_COUNT": (
-        "Let's go back ↩\n\nDo you run more than one business?\nReply 1 for Yes, 2 for No."
-    ),
-    "COLLECTING_STREAM_NAMES": "Let's go back ↩\n\nName your business.",
-    "CONFIGURING_SPLITS": (
-        "Let's go back ↩\n\nWhat percentage of your income should go to each account?\n"
-        "All percentages must add up to 100%."
-    ),
-    "CREATING_PIN": "Let's go back ↩\n\nCreate a 4-digit PIN to secure your account.",
-    "CONFIRMING_PIN": "Let's go back ↩\n\nConfirm your PIN. Enter it again.",
-    "POLICY_ACCEPTANCE": (
-        "Let's go back ↩\n\nReply *I Accept* to activate your account, "
-        "or *back* to change something."
-    ),
-}
-
-# Ordered list of onboarding stages (earliest → latest)
-_ONBOARDING_STAGE_ORDER = [
-    "NEW",
-    "SELECTING_LANGUAGE",
-    "AWAITING_PROFILE_FLOW",
-    "COLLECTING_NAME",
-    "COLLECTING_LOCATION",
-    "COLLECTING_BUSINESS_TYPE",
-    "COLLECTING_ACCOUNT",
-    "CONFIRMING_IDENTITY",
-    "CONNECTING_BANK",
-    "AWAITING_BUSINESS_FLOW",
-    "COLLECTING_STREAM_COUNT",
-    "COLLECTING_STREAM_NAMES",
-    "CREATING_ACCOUNTS",
-    "CONFIGURING_SPLITS",
-    "AWAITING_PIN_SETUP_FLOW",
-    "CREATING_PIN",
-    "CONFIRMING_PIN",
-    "POLICY_ACCEPTANCE",
-]
-
-# pending_data keys to erase when going back FROM a stage
-# (i.e. the data that was collected *during* that stage)
-_CLEAR_ON_BACK_FROM: dict[str, list[str]] = {
-    "SELECTING_LANGUAGE":       ["language"],
-    "AWAITING_PROFILE_FLOW":    ["full_name", "location", "business_type"],
-    "COLLECTING_NAME":          ["full_name"],
-    "COLLECTING_LOCATION":      ["location"],
-    "COLLECTING_BUSINESS_TYPE": ["business_type"],
-    "COLLECTING_ACCOUNT":       [
-        "account_number", "bank_code", "bank_display",
-        "verified_name",
-    ],
-    "CONFIRMING_IDENTITY":      [
-        "verified_bank_account", "verified_bank_code", "verified_bank_name",
-        "squad_customer_id",
-    ],
-    "CONNECTING_BANK":          [],           # no pending_data written here
-    "AWAITING_BUSINESS_FLOW":   ["stream_count", "streams"],
-    "COLLECTING_STREAM_COUNT":  ["stream_count", "streams"],
-    "COLLECTING_STREAM_NAMES":  ["streams"],
-    "CREATING_ACCOUNTS":        ["streams"],  # will be recreated
-    "CONFIGURING_SPLITS":       ["split_index"],
-    "AWAITING_PIN_SETUP_FLOW":  ["pin_hash"],
-    "CREATING_PIN":             ["pin_hash"],
-    "CONFIRMING_PIN":           ["pin_hash"],
-    "POLICY_ACCEPTANCE":        [],
-}
-
-
-async def _synthetic_back(whatsapp_no: str, session: dict) -> str | None:
-    """
-    Fallback revert when the Redis history stack is empty.
-
-    Steps the session back one position in the known onboarding stage order,
-    clears the pending_data that was written during the stage being undone,
-    saves the mutated session to Redis, and returns the reprompt text.
-
-    Returns None if the user is already at the earliest possible stage.
-    """
-    current_stage = session.get("stage", "NEW")
-    try:
-        idx = _ONBOARDING_STAGE_ORDER.index(current_stage)
-    except ValueError:
-        return None  # unknown / post-onboarding stage
-
-    if idx == 0:
-        return None  # already at the very first step
-
-    # Step back
-    previous_stage = _ONBOARDING_STAGE_ORDER[idx - 1]
-
-    # Erase data that was collected at the stage we're leaving
-    pending = session.setdefault("pending_data", {})
-    for key in _CLEAR_ON_BACK_FROM.get(current_stage, []):
-        pending.pop(key, None)
-
-    # Special-case: language lives on the session root, not pending_data
-    if current_stage == "SELECTING_LANGUAGE":
-        session.pop("language", None)
-
-    session["stage"] = previous_stage
-    await save_session(whatsapp_no, session)
-
-    return _STAGE_REPROMPT.get(
-        previous_stage,
-        f"You are back at step *{previous_stage.replace('_', ' ').title()}*.",
-    )
-
 HELP_TEXT = (
-    "Here is what you can do:\n\n"
-    "💰 *balance* — check your vault balances\n"
-    "💸 *withdraw* — withdraw to your bank\n"
-    "🏪 *pay* — pay a supplier\n"
-    "📊 *summary* — get a business insight\n"
-    "📈 *score* — view your trader score\n"
-    "📋 *debrief* — get your daily report\n"
-    "🆘 *help* — see this menu\n"
-    "🙋 *human* — speak to a team member\n"
-    "↩️ *back* — go back to the previous step (during setup)"
+    "AAJE WhatsApp runs storefront operations.\n\n"
+    "Try:\n"
+    "- store link\n"
+    "- what sold today\n"
+    "- recent orders\n"
+    "- pending orders\n"
+    "- low stock\n"
+    "- update stock Ankara Bag 12\n"
+    "- add product Ankara Bag price 15000 stock 8\n"
+    "- mark order 12345678 fulfilled\n"
+    "- withdraw 25000\n"
+    "- campaign performance\n"
+    "- BizPrint summary"
+)
+
+FREE_TEXT = (
+    "Free WhatsApp is enabled for storefront notifications and store link sharing.\n\n"
+    "Upgrade to Premium for operational chat: sales questions, inventory updates, order management, withdrawals, campaign analytics, and BizPrint."
+)
+
+NOT_CONNECTED_TEXT = (
+    "Connect WhatsApp from your AAJE dashboard first.\n\n"
+    "Open Dashboard > Storefront > WhatsApp, enter this number, and AAJE will send a test notification. "
+    "After that, this chat will handle storefront operations."
 )
 
 
-async def route_flow_response(whatsapp_no: str, flow_response: dict):
-    session = await get_session(whatsapp_no)
-    pending_flow = session.get("pending_flow") or {}
-    expected_token = pending_flow.get("token")
-    received_token = flow_response.get("flow_token")
-    if expected_token and received_token and expected_token != received_token:
-        logger.warning("Rejected Flow response with mismatched token for %s", whatsapp_no)
-        await send_text(whatsapp_no, "That secure link has expired. Please request a new one.")
-        return
-
-    if session.get("stage") == "LOCKED":
-        await send_translated(
-            whatsapp_no,
-            "Your account is locked after too many wrong PIN attempts. A team member will contact you.",
-            session.get("language", "en"),
-        )
-        return
-
-    if not session.get("onboarding_complete"):
-        from app.agents.onboarding_agent import handle_onboarding_flow
-
-        await handle_onboarding_flow(whatsapp_no, flow_response, session)
-        return
-
-    if pending_flow.get("type") == "pin_confirm":
-        from app.services.pin import handle_pin_input
-
-        data = flow_response.get("data") or {}
-        pin = str(data.get("pin") or "").strip()
-        await handle_pin_input(whatsapp_no, pin, session)
-        return
-
-    await send_text(whatsapp_no, "I received that secure screen. Send *help* to continue.")
-
-
 async def route_message(whatsapp_no: str, message: str):
-    normalized_message = message.strip().lower()
+    message = (message or "").strip()
+    if not message:
+        return
 
-    # ── Hard reset ─────────────────────────────────────────────────────────
-    if normalized_message in RESET_COMMANDS:
+    if message.lower() in RESET_COMMANDS:
         await clear_session(whatsapp_no)
-        await clear_state_history(whatsapp_no)  # wipe undo stack on full reset
-        session = await get_session(whatsapp_no)
-        from app.agents.onboarding_agent import handle_onboarding
+        await clear_state_history(whatsapp_no)
 
-        await handle_onboarding(whatsapp_no, message, session)
-        return
-
-    # ── Revert state (back / undo) ───────────────────────────────────────────
-    if normalized_message in BACK_COMMANDS:
-        # Layer 1: try the Redis history stack (exact snapshots)
-        previous = await pop_state_history(whatsapp_no)
-        if previous is not None:
-            restored_stage = previous.get("stage", "NEW")
-            reprompt = _STAGE_REPROMPT.get(
-                restored_stage,
-                f"You are back at step *{restored_stage.replace('_', ' ').title()}*.",
-            )
-            await send_translated(whatsapp_no, reprompt, previous.get("language", "en"))
+    async with AsyncSessionLocal() as db:
+        user, store = await _connection(db, whatsapp_no)
+        if not user or not store:
+            await send_text(whatsapp_no, NOT_CONNECTED_TEXT)
             return
 
-        # Layer 2: stack is empty — synthesise a revert from the stage order.
-        # This handles users who were already mid-onboarding before history
-        # was introduced, or who have reached the bottom of the stack but
-        # still want to keep going back.
         session = await get_session(whatsapp_no)
-        reprompt = await _synthetic_back(whatsapp_no, session)
-        if reprompt is not None:
-            await send_translated(whatsapp_no, reprompt, session.get("language", "en"))
+        session.update({"stage": "ACTIVE", "onboarding_complete": True, "language": "en"})
+        await save_session(whatsapp_no, session)
+
+        if message.lower() in BACK_COMMANDS or _is_help(message):
+            await send_text(whatsapp_no, _help_for(user))
             return
 
-        # Nothing left to revert to (e.g. already at SELECTING_LANGUAGE or ACTIVE)
-        await send_translated(
-            whatsapp_no,
-            "↩️ You are already at the beginning — there is nothing further to go back to.\n\n"
-            "Send *restart* to start completely over.",
-            session.get("language", "en"),
+        response = await _handle_store_operation(db, user, store, message)
+        await db.commit()
+        await send_text(whatsapp_no, response)
+
+
+async def route_flow_response(whatsapp_no: str, flow_response: dict):
+    """Browser-flow compatibility hook.
+
+    New WhatsApp operations use browser flows for sensitive actions. The browser
+    flow stores submissions on the FlowSession record; this hook only confirms
+    receipt when an older in-memory flow calls it.
+    """
+    await send_text(whatsapp_no, "Secure response received. AAJE will confirm the result here.")
+
+
+async def _connection(db, whatsapp_no: str) -> tuple[User | None, Store | None]:
+    user = (await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))).scalar_one_or_none()
+    if not user or not user.whatsapp_connected:
+        return user, None
+    store = (await db.execute(select(Store).where(Store.user_id == user.id))).scalar_one_or_none()
+    if not store or store.contact_whatsapp != whatsapp_no:
+        return user, None
+    return user, store
+
+
+def _is_premium(user: User) -> bool:
+    return "premium" in (user.persona_mode or "").lower()
+
+
+def _is_help(message: str) -> bool:
+    text = message.lower().strip()
+    return text in {"help", "menu", "start", "hi", "hello", "hey"} or "what can you do" in text
+
+
+def _help_for(user: User) -> str:
+    return HELP_TEXT if _is_premium(user) else FREE_TEXT + "\n\nReply *store link* to share your storefront."
+
+
+async def _handle_store_operation(db, user: User, store: Store, message: str) -> str:
+    text = message.lower()
+
+    if "store link" in text or "send my store" in text or text.strip() in {"link", "my link"}:
+        return f"Store link: {_store_link(store)}"
+
+    if not _is_premium(user):
+        return FREE_TEXT
+
+    if "sold today" in text or "sales today" in text or ("today" in text and any(term in text for term in {"sales", "orders", "revenue", "sold"})):
+        return await _today_sales(db, store)
+    if "recent order" in text or text in {"orders", "show orders", "latest orders"}:
+        return await _orders(db, store, pending_only=False)
+    if "pending order" in text or "unfulfilled" in text:
+        return await _orders(db, store, pending_only=True)
+    if "low stock" in text or "low inventory" in text or "what is low" in text:
+        return await _low_stock(db, store)
+    if _looks_like_stock_update(text):
+        return await _update_stock(db, store, message)
+    if "add product" in text or "new product" in text or "create product" in text:
+        return await _add_product(db, store, message)
+    if "fulfilled" in text or "fulfill" in text or "delivered" in text:
+        return await _mark_fulfilled(db, store, message)
+    if "withdraw" in text or "cash out" in text or "payout" in text:
+        return await _withdrawal_link(db, user, store, message)
+    if "campaign" in text or "marketing" in text or "growth" in text or "source" in text:
+        return await _campaign_performance(db, store)
+    if "bizprint" in text or "business profile" in text:
+        return await _bizprint(db, user, store)
+    if "top product" in text or "best product" in text or "fastest" in text:
+        return await _top_products(db, store)
+    if "summary" in text or "dashboard" in text:
+        return await _dashboard_summary(db, store)
+
+    return HELP_TEXT
+
+
+def _store_link(store: Store) -> str:
+    base = (settings.frontend_url or settings.app_public_url or "").rstrip("/")
+    path = f"/{store.slug}"
+    return f"{base}{path}" if base else path
+
+
+async def _today_sales(db, store: Store) -> str:
+    today = datetime.now(timezone.utc).date()
+    orders = (await db.execute(
+        select(Order)
+        .where(Order.store_id == store.id, Order.payment_status == "paid")
+        .order_by(Order.created_at.desc())
+    )).scalars().all()
+    paid_today = [order for order in orders if order.paid_at and order.paid_at.date() == today]
+    amount = sum(Decimal(order.total_amount or 0) for order in paid_today)
+    return f"Today: {len(paid_today)} paid order(s), NGN {float(amount):,.2f} revenue."
+
+
+async def _orders(db, store: Store, pending_only: bool) -> str:
+    query = select(Order).where(Order.store_id == store.id).order_by(Order.created_at.desc()).limit(6)
+    rows = (await db.execute(query)).scalars().all()
+    if pending_only:
+        rows = [order for order in rows if order.order_status not in {"fulfilled", "delivered", "cancelled"}]
+    if not rows:
+        return "No pending orders." if pending_only else "No recent orders yet."
+    title = "Pending orders" if pending_only else "Recent orders"
+    lines = [title + ":"]
+    for order in rows[:5]:
+        lines.append(
+            f"- {str(order.id)[:8]}: {order.customer_name or 'Customer'} - "
+            f"NGN {float(order.total_amount or 0):,.2f} - {order.payment_status}/{order.order_status}"
         )
-        return
+    return "\n".join(lines)
 
-    session = await get_session(whatsapp_no)
 
-    # 1. Account locked
-    if session.get("stage") == "LOCKED":
-        await send_translated(
-            whatsapp_no,
-            "🔒 Your account is locked after too many wrong PIN attempts. "
-            "A team member will contact you.",
-            session.get("language", "en"),
+async def _low_stock(db, store: Store) -> str:
+    products = (await db.execute(select(Product).where(Product.store_id == store.id))).scalars().all()
+    low = [product for product in products if (product.stock_quantity or 0) <= (product.low_stock_threshold or 0)]
+    if not low:
+        return "No products are low in stock."
+    return "Low stock:\n" + "\n".join(f"- {p.name}: {p.stock_quantity or 0} left" for p in low[:8])
+
+
+def _looks_like_stock_update(text: str) -> bool:
+    return any(term in text for term in {"update stock", "set stock", "add stock", "restock", "update inventory"})
+
+
+async def _update_stock(db, store: Store, message: str) -> str:
+    product = await _find_product(db, store, message)
+    quantity = _last_int(message)
+    if not product:
+        return "Product not found. Send: update stock Product Name 12."
+    if quantity is None:
+        return "Stock quantity missing. Send: update stock Product Name 12."
+
+    old_quantity = product.stock_quantity or 0
+    text = message.lower()
+    if "add stock" in text or "restock" in text:
+        product.stock_quantity = old_quantity + quantity
+        movement_quantity = quantity
+    else:
+        product.stock_quantity = max(quantity, 0)
+        movement_quantity = product.stock_quantity - old_quantity
+
+    db.add(InventoryMovement(
+        store_id=store.id,
+        product_id=product.id,
+        movement_type="stock_added" if movement_quantity >= 0 else "stock_removed",
+        quantity=abs(movement_quantity),
+        reason="whatsapp_operation",
+    ))
+    return f"Inventory updated: {product.name} now has {product.stock_quantity} in stock."
+
+
+async def _add_product(db, store: Store, message: str) -> str:
+    price = _price(message)
+    stock = _stock(message) or 0
+    name = _product_name(message)
+    if not name or price is None:
+        return "Send product details like: add product Ankara Bag price 15000 stock 8."
+    product = await create_product(db, store, {
+        "name": name,
+        "price": price,
+        "stock_quantity": stock,
+        "source": "whatsapp",
+    })
+    return f"Product added: {product.name}, NGN {float(product.price or 0):,.2f}, stock {product.stock_quantity or 0}."
+
+
+async def _mark_fulfilled(db, store: Store, message: str) -> str:
+    order = await _find_order(db, store, message)
+    if not order:
+        return "Order not found. Send: mark order 12345678 fulfilled."
+    order.order_status = "fulfilled"
+    order.status = "fulfilled"
+    return f"Order {str(order.id)[:8]} marked fulfilled."
+
+
+async def _withdrawal_link(db, user: User, store: Store, message: str) -> str:
+    amount = _amount(message)
+    if not amount or amount <= 0:
+        return "Send the withdrawal amount. Example: withdraw 25000."
+    wallet = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalar_one_or_none()
+    available = Decimal(wallet.available_balance or 0) if wallet else Decimal("0")
+    if available < Decimal(str(amount)):
+        return f"Available storefront balance is NGN {float(available):,.2f}."
+    token, _session = await create_flow_session(db, user.id, "withdrawal", {
+        "amount": amount,
+        "store_id": str(store.id),
+        "whatsapp_no": user.whatsapp_no,
+        "source": "whatsapp_operations",
+    })
+    base = (settings.app_public_url or "http://localhost:8000").rstrip("/")
+    return f"Secure withdrawal link: {base}/flow?token={token}\nNo withdrawal is processed from chat."
+
+
+async def _campaign_performance(db, store: Store) -> str:
+    campaigns = (await db.execute(select(CampaignLink).where(CampaignLink.store_id == store.id))).scalars().all()
+    if not campaigns:
+        return "No campaign links yet. Create a campaign from the dashboard first."
+    campaign_ids = [campaign.id for campaign in campaigns]
+    visits = await db.scalar(select(func.count(CampaignVisit.id)).where(CampaignVisit.campaign_id.in_(campaign_ids))) or 0
+    conversions = await db.scalar(select(func.count(CampaignConversion.id)).where(CampaignConversion.campaign_id.in_(campaign_ids))) or 0
+    revenue = await db.scalar(select(func.coalesce(func.sum(CampaignConversion.revenue), 0)).where(CampaignConversion.campaign_id.in_(campaign_ids))) or 0
+    return f"Campaign performance: {visits} visits, {conversions} order(s), NGN {float(revenue):,.2f} revenue."
+
+
+async def _bizprint(db, user: User, store: Store) -> str:
+    snapshot = (await db.execute(
+        select(BizPrintSnapshot)
+        .where(BizPrintSnapshot.user_id == user.id)
+        .order_by(BizPrintSnapshot.created_at.desc())
+    )).scalar_one_or_none()
+    if not snapshot:
+        return "BizPrint is not ready yet. More storefront activity will improve it."
+    data = snapshot.snapshot_json or {}
+    if isinstance(data, dict):
+        quality = data.get("data_quality") or snapshot.data_quality
+        summary = data.get("summary") or data.get("business_summary") or "Latest BizPrint snapshot is available."
+        return f"BizPrint: {summary}\nData quality: {quality}."
+    return f"BizPrint data quality: {snapshot.data_quality}."
+
+
+async def _top_products(db, store: Store) -> str:
+    rows = (await db.execute(
+        select(
+            OrderItem.product_name,
+            func.coalesce(func.sum(OrderItem.quantity), 0).label("quantity"),
+            func.coalesce(func.sum(OrderItem.total_price), 0).label("revenue"),
         )
-        return
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(Order.store_id == store.id, Order.payment_status == "paid")
+        .group_by(OrderItem.product_name)
+        .order_by(func.sum(OrderItem.quantity).desc())
+        .limit(5)
+    )).all()
+    if not rows:
+        return "No paid product sales yet."
+    return "Top products:\n" + "\n".join(
+        f"- {name}: {int(quantity)} sold, NGN {float(revenue):,.2f}"
+        for name, quantity, revenue in rows
+    )
 
-    # 2. Escalated to human
-    if session.get("stage") == "ESCALATED":
-        await send_translated(
-            whatsapp_no,
-            "A team member is reviewing your case. Please wait — "
-            "they will respond on this chat.",
-            session.get("language", "en"),
-        )
-        return
 
-    # 3. Not yet onboarded
-    if not session.get("onboarding_complete"):
-        from app.agents.onboarding_agent import handle_onboarding
+async def _dashboard_summary(db, store: Store) -> str:
+    paid_count = await db.scalar(select(func.count(Order.id)).where(Order.store_id == store.id, Order.payment_status == "paid")) or 0
+    paid_revenue = await db.scalar(select(func.coalesce(func.sum(Order.total_amount), 0)).where(Order.store_id == store.id, Order.payment_status == "paid")) or 0
+    product_count = await db.scalar(select(func.count(Product.id)).where(Product.store_id == store.id)) or 0
+    low_count = len((await db.execute(select(Product).where(Product.store_id == store.id))).scalars().all())
+    return (
+        f"{store.store_name} summary:\n"
+        f"- Paid orders: {paid_count}\n"
+        f"- Revenue: NGN {float(paid_revenue):,.2f}\n"
+        f"- Products: {product_count}\n"
+        f"- Store link: {_store_link(store)}"
+    )
 
-        await handle_onboarding(whatsapp_no, message, session)
-        return
 
-    # 4. Awaiting PIN confirmation for a sensitive action
-    if session.get("awaiting_pin"):
-        from app.services.pin import handle_pin_input
+async def _find_product(db, store: Store, message: str) -> Product | None:
+    products = (await db.execute(select(Product).where(Product.store_id == store.id))).scalars().all()
+    text = message.lower()
+    exact = [product for product in products if product.name.lower() in text]
+    if exact:
+        return max(exact, key=lambda product: len(product.name))
+    words = {word for word in re.sub(r"\d+", " ", text).split() if len(word) > 2}
+    for product in products:
+        if any(word in product.name.lower() for word in words):
+            return product
+    return None
 
-        await handle_pin_input(whatsapp_no, message, session)
-        return
 
-    # 5. Check for frustration BEFORE intent routing
-    from app.utils.frustration import detect_frustration
+async def _find_order(db, store: Store, message: str) -> Order | None:
+    token = re.search(r"\b([0-9a-f]{8,})\b", message.lower())
+    orders = (await db.execute(select(Order).where(Order.store_id == store.id).order_by(Order.created_at.desc()))).scalars().all()
+    if token:
+        value = token.group(1).replace("-", "")
+        for order in orders:
+            if str(order.id).replace("-", "").startswith(value):
+                return order
+    return orders[0] if len(orders) == 1 else None
 
-    if detect_frustration(message):
-        from app.agents.support_agent import trigger_escalation
 
-        await trigger_escalation(whatsapp_no, message, "frustration", session)
-        return
+def _amount(message: str) -> float | None:
+    text = message.lower().replace(",", "")
+    match = re.search(r"(\d+(?:\.\d+)?)\s*k\b", text)
+    if match:
+        return float(match.group(1)) * 1000
+    match = re.search(r"\b(\d+(?:\.\d+)?)\b", text)
+    return float(match.group(1)) if match else None
 
-    # 6. Intent-based routing replaced by Agent Reasoning Flow
-    from app.agents.agent_runtime import handle_event
 
-    logger.info("Routing message to agent runtime for %s", whatsapp_no)
-    await handle_event(whatsapp_no, message, session)
+def _last_int(message: str) -> int | None:
+    numbers = re.findall(r"\b\d+\b", message.replace(",", ""))
+    return int(numbers[-1]) if numbers else None
+
+
+def _price(message: str) -> float | None:
+    text = message.lower().replace(",", "")
+    match = re.search(r"(?:price|ngn|n|₦)\s*(\d+(?:\.\d+)?)", text)
+    if match:
+        return float(match.group(1))
+    numbers = re.findall(r"\b\d+(?:\.\d+)?\b", text)
+    return float(numbers[0]) if numbers else None
+
+
+def _stock(message: str) -> int | None:
+    match = re.search(r"(?:stock|qty|quantity)\s*(\d+)", message.lower().replace(",", ""))
+    return int(match.group(1)) if match else None
+
+
+def _product_name(message: str) -> str:
+    text = re.sub(r"\b(add|create|new)\s+product\b", "", message, flags=re.IGNORECASE).strip()
+    text = re.split(r"\b(price|ngn|stock|qty|quantity|₦)\b", text, flags=re.IGNORECASE)[0]
+    return text.strip(" :-")[:150]

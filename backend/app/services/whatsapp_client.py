@@ -21,7 +21,23 @@ def _headers() -> dict:
     }
 
 
+def _credentials_configured() -> bool:
+    return bool(settings.meta_phone_number_id and settings.meta_whatsapp_token)
+
+
 async def _post(payload: dict) -> dict:
+    if not _credentials_configured():
+        message_type = payload.get("type", "unknown")
+        recipient = payload.get("to", "unknown")
+        if settings.app_env.lower() == "production":
+            raise RuntimeError("Meta WhatsApp credentials are not configured")
+        logger.warning(
+            "Skipping outbound WhatsApp %s to %s because Meta credentials are not configured.",
+            message_type,
+            recipient,
+        )
+        return {"status": "skipped_unconfigured_whatsapp"}
+
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(_url(), headers=_headers(), json=payload)
     if response.status_code >= 300:
