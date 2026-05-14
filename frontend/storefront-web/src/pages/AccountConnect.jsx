@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Lock, CheckCircle, ArrowRight, Loader2, CreditCard } from 'lucide-react'
+import { connectWhatsapp } from '../lib/api'
 
 export default function AccountConnect() {
   const navigate = useNavigate()
@@ -21,8 +22,12 @@ export default function AccountConnect() {
     e.preventDefault()
     setLoading(true)
     try {
-      // Simulate bank connection
       await new Promise(resolve => setTimeout(resolve, 2000))
+      const user = JSON.parse(localStorage.getItem('aaje_user') || '{}')
+      if (user.phone || user.whatsapp_no) {
+        const response = await connectWhatsapp({ whatsapp_no: user.whatsapp_no || user.phone })
+        localStorage.setItem('aaje_user', JSON.stringify(response.data.user))
+      }
       setStep('success')
     } finally {
       setLoading(false)
@@ -57,11 +62,11 @@ export default function AccountConnect() {
             </div>
 
             <button
-              onClick={() => navigate('/pricing')}
+              onClick={() => navigate('/dashboard')}
               className="mt-6 w-full btn-primary flex items-center justify-center gap-2"
             >
               <ArrowRight className="h-4 w-4" />
-              Choose Your Plan
+              Open Dashboard
             </button>
           </div>
         </div>

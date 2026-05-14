@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react'
+import { googleSignIn, signup } from '../lib/api'
 
 const merchantImage =
   'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=1200&q=85'
@@ -42,43 +43,56 @@ export default function Signup() {
     setLoading(true)
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      const user = {
-        id: Math.random().toString(36).slice(2, 11),
+      const response = await signup({
         email: form.email,
-        phone: form.phone,
+        password: form.password,
         full_name: form.fullName,
+        phone: form.phone,
         business_description: form.businessDescription,
-        auth_provider: 'email',
-        plan: 'free',
-        createdAt: new Date().toISOString(),
-      }
+      })
+      
+      const { user, token, store } = response.data
 
+      localStorage.setItem('auth_token', token)
       localStorage.setItem('aaje_user', JSON.stringify(user))
+      localStorage.setItem('aaje_user_id', user.id)
+      if (store) {
+        localStorage.setItem('aaje_store', JSON.stringify(store))
+      }
+      
       sessionStorage.setItem('aaje_onboarding_seed', JSON.stringify({
         business: form.businessDescription,
         name: form.fullName,
         phone: form.phone,
       }))
       navigate('/onboarding')
+    } catch (err) {
+      console.error("Signup error:", err)
+      alert(err.response?.data?.detail || "Signup failed. Please try again.")
     } finally {
       setLoading(false)
     }
   }
 
-  function handleGoogleSignup() {
-    const user = {
-      id: Math.random().toString(36).slice(2, 11),
-      email: 'founder@gmail.com',
-      full_name: 'AAJE Founder',
-      auth_provider: 'google',
-      plan: 'free',
-      createdAt: new Date().toISOString(),
+  async function handleGoogleSignup() {
+    setLoading(true)
+    try {
+      const response = await googleSignIn({
+        email: 'founder@gmail.com',
+        full_name: 'AAJE Founder',
+      })
+      const { user, token } = response.data
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('aaje_user', JSON.stringify(user))
+      localStorage.setItem('aaje_user_id', user.id)
+      sessionStorage.setItem('aaje_onboarding_seed', JSON.stringify({ business: '' }))
+      navigate('/onboarding')
+    } catch (err) {
+      console.error('Google signup error:', err)
+      alert(err.response?.data?.detail || 'Google signup failed. Please try email signup.')
+    } finally {
+      setLoading(false)
     }
-
-    localStorage.setItem('aaje_user', JSON.stringify(user))
-    sessionStorage.setItem('aaje_onboarding_seed', JSON.stringify({ business: '' }))
-    navigate('/onboarding')
   }
 
   return (

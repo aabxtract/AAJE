@@ -10,7 +10,10 @@ import Dashboard from './pages/admin/Dashboard.jsx'
 import Inventory from './pages/admin/Inventory.jsx'
 import Orders from './pages/admin/Orders.jsx'
 import Products from './pages/admin/Products.jsx'
+import StoreSetup from './pages/admin/StoreSetup.jsx'
 import StorePage from './pages/store/[slug].jsx'
+import Checkout from './pages/checkout/index.jsx'
+import PaymentSuccess from './pages/payment-success/index.jsx'
 
 // Simple auth check (for demo)
 function ProtectedRoute({ children }) {
@@ -51,9 +54,13 @@ export default function App() {
       <Route path="/store-preview" element={<ProtectedRoute><StorePreview /></ProtectedRoute>} />
       <Route path="/account-connect" element={<ProtectedRoute><AccountConnect /></ProtectedRoute>} />
       <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
+      <Route path="/checkout" element={<Checkout />} />
+      <Route path="/payment-success" element={<PaymentSuccess />} />
 
       {/* Admin dashboard */}
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/admin/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/admin/store-setup" element={<ProtectedRoute><StoreSetup /></ProtectedRoute>} />
       <Route path="/admin/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
       <Route path="/admin/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
       <Route path="/admin/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />

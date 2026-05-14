@@ -35,9 +35,9 @@ def build_idempotency_key(payload: dict) -> str:
 
 async def emit_event(db: AsyncSession, payload: dict, process_now: bool = True) -> Event:
     event_type = payload["event_type"]
-    user_id = payload["user_id"]
+    user_id = _coerce_uuid(payload["user_id"])
     source = payload.get("source", "system")
-    store_id = payload.get("store_id")
+    store_id = _coerce_uuid(payload.get("store_id"))
     idempotency_key = payload.get("idempotency_key") or build_idempotency_key(payload)
 
     existing = await db.execute(select(Event).where(Event.idempotency_key == idempotency_key))
@@ -58,6 +58,14 @@ async def emit_event(db: AsyncSession, payload: dict, process_now: bool = True) 
     if process_now:
         await process_event(db, event)
     return event
+
+
+def _coerce_uuid(value):
+    if value in {None, ""}:
+        return None
+    if isinstance(value, UUID):
+        return value
+    return UUID(str(value))
 
 
 async def process_event(db: AsyncSession, event: Event) -> None:

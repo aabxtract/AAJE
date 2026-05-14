@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Send, Loader2, Sparkles, ArrowRight } from 'lucide-react'
+import { generateStore as generateStoreBlueprint } from '../lib/api'
 
 const AI_QUESTIONS = [
   {
@@ -71,25 +72,35 @@ export default function Onboarding() {
   async function generateStore(finalAnswers) {
     setLoading(true)
     try {
-      // Simulate AI store generation
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      const prompt = [
+        finalAnswers.business,
+        finalAnswers.customers ? `Customers: ${finalAnswers.customers}` : '',
+        finalAnswers.style ? `Style: ${finalAnswers.style}` : '',
+        finalAnswers.name ? `Preferred store name: ${finalAnswers.name}` : '',
+      ].filter(Boolean).join('\n')
 
+      const response = await generateStoreBlueprint(prompt || finalAnswers.business || 'AAJE storefront')
+      const blueprint = response.data || {}
+      const existingStore = JSON.parse(localStorage.getItem('aaje_store') || '{}')
+      const preferredName = finalAnswers.name?.trim()
       const generatedStore = {
-        name: finalAnswers.name || 'My Store',
-        slug: (finalAnswers.name || 'my-store').toLowerCase().replace(/\s+/g, '-'),
-        description: `${finalAnswers.business || 'Quality products'} for ${finalAnswers.customers || 'everyone'}`,
+        ...blueprint,
+        ...existingStore,
+        store_name: preferredName || existingStore.store_name || blueprint.store_name || 'My Store',
+        name: preferredName || existingStore.store_name || blueprint.store_name || 'My Store',
+        slug: existingStore.slug || blueprint.slug || (preferredName || blueprint.store_name || 'my-store').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        description: blueprint.description || existingStore.description || `${finalAnswers.business || 'Quality products'} for ${finalAnswers.customers || 'everyone'}`,
         category: finalAnswers.business,
-        theme: finalAnswers.style,
-        products: [
-          { id: 1, name: 'Product 1', price: 15000, image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300&h=300&fit=crop' },
-          { id: 2, name: 'Product 2', price: 25000, image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=300&h=300&fit=crop' },
-          { id: 3, name: 'Product 3', price: 35000, image: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=300&h=300&fit=crop' },
-        ]
+        theme: blueprint.theme || finalAnswers.style,
+        products: blueprint.starter_products || existingStore.products || [],
       }
 
       setStore(generatedStore)
-      sessionStorage.setItem('aaje_store', JSON.stringify(generatedStore))
+      sessionStorage.setItem('aaje_generated_store', JSON.stringify(generatedStore))
       setCurrentIndex(currentIndex + 1)
+    } catch (err) {
+      console.error('AI generation error:', err)
+      alert(err.response?.data?.detail || 'Could not generate your store preview. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -111,7 +122,7 @@ export default function Onboarding() {
               <div className="space-y-3">
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase">Store name</p>
-                  <p className="text-lg font-bold text-gray-900">{store.name}</p>
+                  <p className="text-lg font-bold text-gray-900">{store.store_name || store.name}</p>
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase">Description</p>
@@ -123,7 +134,7 @@ export default function Onboarding() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase">Sample products generated</p>
-                  <p className="text-gray-700">{store.products.length} starter products</p>
+                  <p className="text-gray-700">{store.products?.length || store.starter_products?.length || 0} starter products</p>
                 </div>
               </div>
             </div>

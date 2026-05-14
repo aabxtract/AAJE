@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.commerce import Store
 from app.models.user import User
 from app.storefront.service import create_storefront_from_description
 
@@ -48,21 +49,30 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
     if not payload.phone:
         raise HTTPException(status_code=400, detail="Phone number required for email signups")
 
+    whatsapp_no = _normalize_whatsapp_number(payload.phone)
     existing = (await db.execute(select(User).where(User.email == payload.email.lower()))).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=409, detail="Email already exists")
+    existing_whatsapp = (await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))).scalar_one_or_none()
+    if existing_whatsapp:
+        raise HTTPException(status_code=409, detail="WhatsApp number already exists")
+
     user = User(
         email=payload.email.lower(),
         password_hash=_hash_password(payload.password),
         full_name=payload.full_name,
         phone=payload.phone,
+        whatsapp_no=whatsapp_no,
+        whatsapp_connected=True,
         business_description=payload.business_description,
         onboarding_complete=True,
-        persona_mode="storefront_extension",
+        persona_mode="storefront_operations_free",
     )
     db.add(user)
     await db.flush()
     store = await create_storefront_from_description(db, user, payload.business_description, payload.create_squad_account)
+    store.contact_whatsapp = whatsapp_no
+    store.whatsapp_number = whatsapp_no
     return {
         "token": _create_token(str(user.id)),
         "user": _user_payload(user),
@@ -116,9 +126,14 @@ async def me(authorization: str | None = Header(default=None), db: AsyncSession 
 @router.post("/connect-whatsapp")
 async def connect_whatsapp(payload: ConnectWhatsappRequest, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
     user = await _current_user(db, authorization)
-    user.whatsapp_no = payload.whatsapp_no
+    whatsapp_no = _normalize_whatsapp_number(payload.whatsapp_no)
+    user.whatsapp_no = whatsapp_no
     user.whatsapp_connected = True
-    user.persona_mode = "storefront_extension"
+    user.persona_mode = "storefront_operations_free" if user.plan == "free" else "storefront_operations_premium"
+    stores = (await db.execute(select(Store).where(Store.user_id == user.id))).scalars().all()
+    for store in stores:
+        store.contact_whatsapp = whatsapp_no
+        store.whatsapp_number = whatsapp_no
     return {"status": "connected", "user": _user_payload(user)}
 
 
@@ -183,6 +198,13 @@ def _b64_bytes(data: bytes) -> str:
 def _b64_decode(data: str) -> str:
     padded = data + "=" * (-len(data) % 4)
     return base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+
+
+def _normalize_whatsapp_number(value: str | None) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if digits.startswith("0") and len(digits) == 11:
+        return f"234{digits[1:]}"
+    return digits
 
 
 def _user_payload(user: User) -> dict:

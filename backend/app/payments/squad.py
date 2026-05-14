@@ -151,7 +151,7 @@ async def register_customer(
     }
     try:
         result = await _request("POST", "/virtual-account", payload)
-    except SquadAccountLimitError:
+    except (SquadAccountLimitError, httpx.ConnectError, httpx.ReadTimeout):
         if not settings.squad_mock_on_account_limit:
             raise
         result = _mock_virtual_account(customer_id)
@@ -197,7 +197,7 @@ async def create_virtual_account(
     }
     try:
         return await _request("POST", "/virtual-account", payload)
-    except SquadAccountLimitError:
+    except (SquadAccountLimitError, httpx.ConnectError, httpx.ReadTimeout):
         if not settings.squad_mock_on_account_limit:
             raise
         return _mock_virtual_account(customer_id)

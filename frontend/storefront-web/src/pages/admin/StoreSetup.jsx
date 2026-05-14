@@ -11,13 +11,14 @@ export default function StoreSetup() {
   const [aiResult, setAiResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [created, setCreated] = useState(null)
+  const user = JSON.parse(localStorage.getItem('aaje_user') || '{}')
   const [form, setForm] = useState({
     user_id: getDemoUserId(),
     store_name: '',
     slug: '',
     description: '',
     logo_url: '',
-    contact_whatsapp: '',
+    contact_whatsapp: user.whatsapp_no || user.phone || '',
     business_category: '',
     pickup_delivery_note: '',
     theme_json: { style: 'clean', primary_color: '#111827', layout: 'simple_grid' },
@@ -59,6 +60,7 @@ export default function StoreSetup() {
     try {
       const res = await createStore(form)
       setCreated(res.data)
+      localStorage.setItem('aaje_store', JSON.stringify(res.data))
       setStep('success')
     } finally {
       setLoading(false)
@@ -85,7 +87,7 @@ export default function StoreSetup() {
           <p className="mt-2 text-sm text-gray-500">Your storefront is ready to receive products and orders.</p>
           <div className="mt-6 flex gap-3">
             <Link className="btn-secondary flex-1" to={`/store/${slug}`}>Open Store</Link>
-            <button className="btn-primary flex-1" onClick={() => navigate('/admin/dashboard')}>Dashboard</button>
+            <button className="btn-primary flex-1" onClick={() => navigate('/dashboard')}>Dashboard</button>
           </div>
         </div>
       </main>

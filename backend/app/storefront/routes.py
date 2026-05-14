@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
 
 from app.database import get_db
-from app.models.commerce import InventoryMovement, Order, Product, Store
+from app.models.commerce import InventoryMovement, Order, OrderItem, Product, Store
 from app.models.user import User
 from app.campaigns.routes import find_campaign_by_ref, record_campaign_visit
 from app.events.handlers import emit_event
@@ -115,7 +116,7 @@ async def get_store(slug: str, ref: str | None = None, session_id: str | None = 
 
 @router.get("/stores/by-user/{user_id}")
 async def get_store_by_user(user_id: str, db: AsyncSession = Depends(get_db)):
-    stores = (await db.execute(select(Store).where(Store.user_id == user_id))).scalars().all()
+    stores = (await db.execute(select(Store).where(Store.user_id == UUID(user_id)))).scalars().all()
     return [_store(store) for store in stores]
 
 
@@ -200,7 +201,24 @@ async def get_order(order_id: str, db: AsyncSession = Depends(get_db)):
     order = await db.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return _order(order)
+    data = _order(order)
+    store = await db.get(Store, order.store_id)
+    if store:
+        data["store_slug"] = store.slug
+        data["store_name"] = store.store_name
+    items = (await db.execute(select(OrderItem, Product).outerjoin(Product, Product.id == OrderItem.product_id).where(OrderItem.order_id == order.id))).all()
+    data["items"] = [
+        {
+            "id": str(item.id),
+            "product_id": str(item.product_id),
+            "product_name": item.product_name or (product.name if product else None),
+            "quantity": item.quantity,
+            "unit_price": float(item.unit_price or 0),
+            "total_price": float(item.total_price or 0),
+        }
+        for item, product in items
+    ]
+    return data
 
 
 @router.put("/orders/{order_id}/status")
@@ -208,11 +226,32 @@ async def update_order_status(order_id: str, payload: dict, db: AsyncSession = D
     order = await db.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    previous_payment_status = order.payment_status
     status = payload.get("order_status") or payload.get("status")
-    if not status:
+    payment_status = payload.get("payment_status")
+    if not status and not payment_status:
         raise HTTPException(status_code=400, detail="status is required")
-    order.order_status = status
-    order.status = status
+    should_mark_paid = payment_status == "paid" or status == "paid" or payload.get("simulate_payment")
+    if status:
+        order.order_status = status
+        order.status = status
+    if payment_status and payment_status != "paid":
+        order.payment_status = payment_status
+
+    if previous_payment_status != "paid" and should_mark_paid:
+        await emit_event(db, {
+            "event_type": "payment_confirmed",
+            "source": "storefront",
+            "user_id": str(order.user_id),
+            "store_id": str(order.store_id),
+            "order_id": str(order.id),
+            "amount": float(order.total_amount or 0),
+            "reference": order.squad_payment_reference,
+        })
+    elif should_mark_paid:
+        order.payment_status = "paid"
+        order.order_status = "paid"
+        order.status = "paid"
     return _order(order)
 
 
@@ -309,6 +348,7 @@ def _order(order: Order) -> dict:
     return {
         "id": str(order.id),
         "store_id": str(order.store_id),
+        "user_id": str(order.user_id),
         "customer_name": order.customer_name,
         "customer_phone": order.customer_phone,
         "total_amount": float(order.total_amount or 0),
@@ -316,4 +356,6 @@ def _order(order: Order) -> dict:
         "order_status": order.order_status,
         "squad_payment_reference": order.squad_payment_reference,
         "campaign_ref": order.campaign_ref,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "updated_at": order.updated_at.isoformat() if order.updated_at else None,
     }

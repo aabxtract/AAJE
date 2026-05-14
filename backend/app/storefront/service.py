@@ -215,6 +215,8 @@ async def create_order(db: AsyncSession, store: Store, payload: dict) -> Order:
         if not product or product.store_id != store.id:
             raise ValueError("Invalid product for this store")
         quantity = int(item.get("quantity") or 1)
+        if product.type != "service" and (product.stock_quantity or 0) < quantity:
+            raise ValueError(f"{product.name} is out of stock")
         line_total = Decimal(product.price) * quantity
         total += line_total
         resolved_items.append((product, quantity, line_total))

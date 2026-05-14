@@ -27,7 +27,7 @@ const PLANS = [
   {
     id: 'premium',
     name: 'Premium',
-    price: 9999,
+    price: 3000,
     period: 'per month',
     description: 'Everything you need to grow',
     highlighted: true,
@@ -59,14 +59,15 @@ export default function Pricing() {
       await new Promise(resolve => setTimeout(resolve, 1000))
 
       if (plan.id === 'free') {
-        // Free plan: direct to dashboard
         const user = JSON.parse(localStorage.getItem('aaje_user'))
         user.plan = 'free'
         localStorage.setItem('aaje_user', JSON.stringify(user))
-        navigate('/dashboard')
+        navigate('/account-connect')
       } else {
-        // Premium: go to payment
-        navigate('/checkout/premium')
+        const user = JSON.parse(localStorage.getItem('aaje_user'))
+        user.plan = 'premium'
+        localStorage.setItem('aaje_user', JSON.stringify(user))
+        navigate('/account-connect')
       }
     } finally {
       setLoading(false)
@@ -236,7 +237,7 @@ export default function Pricing() {
 
             <div>
               <h3 className="font-semibold text-gray-900">Is there a setup fee?</h3>
-              <p className="mt-2 text-gray-600">No setup fees. Premium is ₦9,999/month. Free plan is completely free.</p>
+              <p className="mt-2 text-gray-600">No setup fees. Premium is NGN 3,000/month. Free plan is completely free.</p>
             </div>
 
             <div>

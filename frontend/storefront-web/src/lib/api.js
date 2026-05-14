@@ -13,7 +13,7 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-export const generateStore = (prompt) => api.post('/api/storefront/ai/generate-store', { prompt })
+export const generateStore = (description) => api.post('/api/storefront/ai/generate-store', { description })
 export const generateProductDescription = (payload) => api.post('/api/storefront/ai/generate-product-description', payload)
 
 export const createStore = (data) => api.post('/api/storefront/stores', data)
@@ -28,7 +28,7 @@ export const deleteProduct = (productId) => api.delete(`/api/storefront/products
 
 export const createOrder = (data) => api.post('/api/storefront/orders', data)
 export const getOrdersByStore = (storeId) => api.get(`/api/storefront/orders/${storeId}`)
-export const getOrderDetail = (orderId) => api.get(`/api/storefront/orders/detail/${orderId}`)
+export const getOrderDetail = (orderId) => api.get(`/api/storefront/order/${orderId}`)
 export const updateOrderStatus = (orderId, payload) => api.put(`/api/storefront/orders/${orderId}/status`, payload)
 
 export const getInventoryByStore = (storeId) => api.get(`/api/storefront/inventory/${storeId}`)
@@ -37,5 +37,10 @@ export const adjustInventory = (data) => api.post('/api/storefront/inventory/adj
 export const initiatePayment = (data) => api.post('/api/payments/initiate', data)
 export const getStoreIntelligence = (storeId) => api.get(`/api/intelligence/store/${storeId}`)
 export const emitStorefrontEvent = (data) => api.post('/api/events/storefront', data)
+
+export const signup = (data) => api.post('/auth/signup', data)
+export const login = (data) => api.post('/auth/login', data)
+export const googleSignIn = (data) => api.post('/auth/google-signin', data)
+export const connectWhatsapp = (data) => api.post('/auth/connect-whatsapp', data)
 
 export default api

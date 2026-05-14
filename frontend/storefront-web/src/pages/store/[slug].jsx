@@ -54,7 +54,7 @@ export default function StorePage() {
           customer_phone: order.customer_phone,
         })
         if (paymentRes.data.payment_link) window.location.href = paymentRes.data.payment_link
-        else window.location.href = `/payment-success?order_id=${order.id}&reference=${paymentRes.data.payment_reference || ''}`
+        else window.location.href = `/payment-success?order_id=${order.id}&reference=${paymentRes.data.reference || paymentRes.data.payment_reference || ''}&simulate=1`
       } catch {
         window.location.href = `/payment-success?order_id=${order.id}&simulate=1`
       }

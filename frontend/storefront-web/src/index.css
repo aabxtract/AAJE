@@ -1,106 +1,468 @@
+/* ── Google Fonts ───────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════════════
+   BASE LAYER
+   ═══════════════════════════════════════════════════════════════ */
 @layer base {
   :root {
-    --primary-50: #f0f9ff;
-    --primary-100: #e0f2fe;
-    --primary-200: #bae6fd;
-    --primary-300: #7dd3fc;
-    --primary-400: #38bdf8;
-    --primary-500: #0ea5e9;
-    --primary-600: #0284c7;
-    --primary-700: #0369a1;
-    --primary-800: #075985;
-    --primary-900: #0c3d66;
+    /* Brand */
+    --brand-navy:     #077EF6;
+    --brand-dark:     #030328;
+    --brand-white:    #FFFFFF;
+
+    /* Accents */
+    --accent-yellow:  #FFE45E;
+    --accent-coral:   #FF6B6B;
+    --accent-green:   #82F4A0;
+    --accent-lavender:#C4B5FD;
+    --accent-sky:     #93C5FD;
+    --accent-cream:   #FFF8F0;
+    --accent-peach:   #FFD4C2;
+
+    /* Surfaces */
+    --surface-base:   #FAFAFA;
+    --surface-card:   #FFFFFF;
+    --surface-muted:  #F4F4F8;
+    --surface-border: #111111;
+    --surface-subtle: #E8E8F0;
+
+    /* Ink */
+    --ink:            #030328;
+    --ink-muted:      #6B7280;
+    --ink-faint:      #9CA3AF;
+
+    /* Neo-brut shadow tokens */
+    --shadow-brut-sm: 2px 2px 0px 0px #111111;
+    --shadow-brut:    4px 4px 0px 0px #111111;
+    --shadow-brut-md: 6px 6px 0px 0px #111111;
+    --shadow-brut-lg: 8px 8px 0px 0px #111111;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    background-color: var(--surface-base);
+    color: var(--ink);
+    line-height: 1.6;
   }
 
-  button,
-  input,
-  select,
-  textarea {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+
+  button, input, select, textarea {
     font: inherit;
+  }
+
+  *:focus-visible {
+    outline: 2.5px solid var(--brand-navy);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: #077EF6;
+    color: #fff;
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   COMPONENT LAYER — design tokens as utility classes
+   ═══════════════════════════════════════════════════════════════ */
 @layer components {
-  .btn-primary {
-    @apply inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-primary-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50;
+
+  /* ── BUTTONS ───────────────────────────────────────────────── */
+
+  /* Primary – navy, neo-brut stroke + shadow */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           font-display font-bold text-sm tracking-wide
+           rounded-xl border-2 border-surface-border
+           transition-all duration-150 cursor-pointer select-none
+           focus-visible:ring-4 focus-visible:ring-brand-navy/30
+           disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
-  .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-lg border-2 border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-50;
+  .btn-primary {
+    @apply btn px-5 py-2.5
+           bg-brand-navy text-white
+           shadow-brut
+           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
+           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
+  }
+
+  .btn-dark {
+    @apply btn px-5 py-2.5
+           bg-brand-dark text-white
+           shadow-brut
+           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
+           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
+  }
+
+  .btn-yellow {
+    @apply btn px-5 py-2.5
+           bg-accent-yellow text-brand-dark
+           shadow-brut
+           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
+           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
+  }
+
+  .btn-coral {
+    @apply btn px-5 py-2.5
+           bg-accent-coral text-white
+           shadow-brut
+           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
+           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
+  }
+
+  .btn-outline {
+    @apply btn px-5 py-2.5
+           bg-white text-brand-dark
+           shadow-brut
+           hover:bg-surface-muted
+           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
+           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-100;
+    @apply btn px-4 py-2 border-transparent
+           bg-transparent text-ink-muted
+           hover:bg-surface-muted hover:text-ink
+           shadow-none;
   }
+
+  .btn-sm {
+    @apply btn px-3.5 py-1.5 text-xs rounded-lg;
+  }
+
+  .btn-lg {
+    @apply btn px-7 py-3.5 text-base rounded-2xl;
+  }
+
+  /* ── CARDS ─────────────────────────────────────────────────── */
+
+  /* Base card — neo-brutalist thick border, soft flat shadow */
+  .card {
+    @apply bg-surface-card rounded-2xl border-2 border-surface-border
+           shadow-brut transition-all duration-200;
+  }
+
+  .card-hover {
+    @apply card
+           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
+           cursor-pointer;
+  }
+
+  /* Bento tile variants */
+  .bento-tile {
+    @apply card p-5 flex flex-col gap-3;
+  }
+
+  .bento-tile-yellow {
+    @apply bento-tile bg-accent-yellow;
+  }
+
+  .bento-tile-navy {
+    @apply bento-tile bg-brand-navy text-white;
+  }
+
+  .bento-tile-dark {
+    @apply bento-tile bg-brand-dark text-white;
+  }
+
+  .bento-tile-coral {
+    @apply bento-tile bg-accent-coral text-white;
+  }
+
+  .bento-tile-green {
+    @apply bento-tile bg-accent-green text-brand-dark;
+  }
+
+  .bento-tile-lavender {
+    @apply bento-tile bg-accent-lavender text-brand-dark;
+  }
+
+  .bento-tile-cream {
+    @apply bento-tile bg-accent-cream text-brand-dark;
+  }
+
+  /* Stat card */
+  .stat-card {
+    @apply bento-tile;
+  }
+
+  .stat-card-value {
+    @apply text-4xl font-display font-bold tracking-tight leading-none;
+  }
+
+  .stat-card-label {
+    @apply text-sm font-medium text-ink-muted;
+  }
+
+  /* ── INPUTS ────────────────────────────────────────────────── */
 
   .input-field {
-    @apply block w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100;
+    @apply block w-full rounded-xl border-2 border-surface-border
+           bg-white px-4 py-3 text-sm font-medium
+           outline-none transition-all duration-200
+           placeholder:text-ink-faint
+           focus:border-brand-navy focus:shadow-glow-navy
+           hover:border-ink/60;
   }
 
-  .card {
-    @apply rounded-xl border border-gray-200 bg-white shadow-sm;
+  .input-field-label {
+    @apply block text-sm font-bold text-ink mb-1.5;
   }
 
-  /* Animations */
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  /* ── BADGES ────────────────────────────────────────────────── */
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full border-2 border-surface-border
+           px-2.5 py-0.5 text-2xs font-bold uppercase tracking-widest
+           shadow-brut-sm transition-all duration-150;
   }
 
-  @keyframes slideInDown {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  .badge-navy    { @apply badge bg-brand-navy text-white; }
+  .badge-yellow  { @apply badge bg-accent-yellow text-brand-dark; }
+  .badge-green   { @apply badge bg-accent-green text-brand-dark; }
+  .badge-coral   { @apply badge bg-accent-coral text-white; }
+  .badge-lavender{ @apply badge bg-accent-lavender text-brand-dark; }
+  .badge-sky     { @apply badge bg-accent-sky text-brand-dark; }
+  .badge-dark    { @apply badge bg-brand-dark text-white; }
+  .badge-white   { @apply badge bg-white text-brand-dark; }
+
+  /* ── TAGS ──────────────────────────────────────────────────── */
+
+  .tag {
+    @apply inline-flex items-center gap-1 rounded-lg border border-surface-subtle
+           bg-surface-muted px-2 py-0.5 text-xs font-semibold text-ink-muted;
   }
 
-  .animate-fadeIn {
-    animation: fadeIn 0.3s ease-out;
+  /* ── SECTION ───────────────────────────────────────────────── */
+
+  .section {
+    @apply py-20 px-4 sm:px-6 lg:px-8;
   }
 
-  .animate-slideInDown {
-    animation: slideInDown 0.3s ease-out;
+  .section-heading {
+    @apply text-4xl sm:text-5xl font-display font-bold tracking-tight text-ink;
   }
 
-  /* Utility classes */
-  .text-gradient {
-    @apply bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent;
+  .section-sub {
+    @apply text-base sm:text-lg text-ink-muted font-medium leading-relaxed;
   }
 
-  .glass {
-    @apply bg-white/80 backdrop-blur-xl border border-white/20;
+  /* ── PILL NAV ──────────────────────────────────────────────── */
+
+  .pill-nav-item {
+    @apply flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold
+           text-ink-muted transition-all duration-150
+           hover:bg-surface-muted hover:text-ink;
   }
 
-  /* Scrollbar */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  .pill-nav-item-active {
+    @apply pill-nav-item bg-brand-dark text-white shadow-brut-sm;
   }
 
-  ::-webkit-scrollbar-track {
-    @apply bg-gray-100;
+  /* ── FLOATING DECORATORS ───────────────────────────────────── */
+
+  .deco-circle {
+    @apply absolute rounded-full border-2 border-surface-border pointer-events-none;
   }
 
-  ::-webkit-scrollbar-thumb {
-    @apply bg-gray-400 rounded-full hover:bg-gray-500;
+  .deco-star {
+    @apply absolute pointer-events-none text-accent-yellow select-none;
   }
+
+  /* ── SKELETON ──────────────────────────────────────────────── */
+
+  .skeleton {
+    @apply rounded-xl bg-gradient-to-r from-surface-muted via-surface-subtle to-surface-muted
+           bg-[length:800px_100%] animate-shimmer;
+  }
+
+  /* ── DIVIDER ───────────────────────────────────────────────── */
+
+  .divider {
+    @apply border-t-2 border-surface-border;
+  }
+
+  /* ── TOOLTIP ───────────────────────────────────────────────── */
+
+  .tooltip {
+    @apply absolute z-50 rounded-lg border-2 border-surface-border bg-brand-dark
+           px-3 py-1.5 text-xs font-bold text-white shadow-brut-sm
+           pointer-events-none whitespace-nowrap;
+  }
+
+  /* ── ALERT BANNERS ─────────────────────────────────────────── */
+
+  .alert {
+    @apply flex items-start gap-3 rounded-xl border-2 border-surface-border
+           p-4 text-sm font-medium shadow-brut-sm;
+  }
+  .alert-info   { @apply alert bg-accent-sky/20 text-brand-dark; }
+  .alert-warn   { @apply alert bg-accent-yellow/40 text-brand-dark; }
+  .alert-ok     { @apply alert bg-accent-green/30 text-brand-dark; }
+  .alert-error  { @apply alert bg-accent-coral/20 text-brand-dark; }
+
+  /* ── MODAL OVERLAY ─────────────────────────────────────────── */
+
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center
+           bg-brand-dark/60 backdrop-blur-sm p-4;
+  }
+
+  .modal-box {
+    @apply card p-6 sm:p-8 w-full max-w-lg animate-fade-up;
+  }
+
+  /* ── TABLE ─────────────────────────────────────────────────── */
+
+  .data-table {
+    @apply w-full text-sm border-2 border-surface-border rounded-2xl overflow-hidden;
+  }
+
+  .data-table th {
+    @apply bg-surface-muted px-4 py-3 text-left text-xs font-bold uppercase
+           tracking-widest text-ink-muted border-b-2 border-surface-border;
+  }
+
+  .data-table td {
+    @apply px-4 py-3 border-b border-surface-subtle font-medium;
+  }
+
+  .data-table tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .data-table tbody tr {
+    @apply transition-colors duration-100 hover:bg-surface-muted;
+  }
+
+  /* ── STATUS DOT ────────────────────────────────────────────── */
+
+  .status-dot {
+    @apply inline-block h-2 w-2 rounded-full;
+  }
+  .status-dot-green  { @apply status-dot bg-ok; }
+  .status-dot-yellow { @apply status-dot bg-warn; }
+  .status-dot-red    { @apply status-dot bg-danger; }
+  .status-dot-blue   { @apply status-dot bg-brand-navy; }
+
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   UTILITY LAYER
+   ═══════════════════════════════════════════════════════════════ */
+@layer utilities {
+
+  /* Font family shortcuts */
+  .font-display { font-family: 'Space Grotesk', system-ui, sans-serif; }
+
+  /* Tight letter-spacing on large headings */
+  .tracking-display { letter-spacing: -0.04em; }
+
+  /* Outlined text — neo-brut headline treatment */
+  .text-outline {
+    -webkit-text-stroke: 2.5px #111111;
+    color: transparent;
+  }
+
+  .text-outline-navy {
+    -webkit-text-stroke: 2.5px #077EF6;
+    color: transparent;
+  }
+
+  /* Smooth hover translate helpers */
+  .hover-lift {
+    @apply transition-transform duration-200 hover:-translate-y-1;
+  }
+
+  .hover-brut {
+    @apply transition-all duration-150
+           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md;
+  }
+
+  /* ── Scrollbar ────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 7px; height: 7px; }
+  ::-webkit-scrollbar-track  { background: var(--surface-muted); }
+  ::-webkit-scrollbar-thumb  {
+    background: var(--surface-subtle);
+    border-radius: 99px;
+    border: 2px solid var(--surface-border);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--ink-muted); }
+
+  /* ── Shimmer skeleton background ─────────────────────────── */
+  .shimmer-bg {
+    background: linear-gradient(
+      90deg,
+      var(--surface-muted) 25%,
+      var(--surface-subtle) 37%,
+      var(--surface-muted) 63%
+    );
+    background-size: 400px 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  /* ── Bento grid helpers ───────────────────────────────────── */
+  .bento-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  .bento-grid-2 {
+    @apply grid gap-4 grid-cols-1 sm:grid-cols-2;
+  }
+
+  .bento-grid-3 {
+    @apply grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3;
+  }
+
+  .bento-grid-4 {
+    @apply grid gap-4 grid-cols-2 lg:grid-cols-4;
+  }
+
+  /* ── Pattern backgrounds ──────────────────────────────────── */
+  .bg-dots {
+    background-image: radial-gradient(circle, #11111120 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .bg-grid {
+    background-image:
+      linear-gradient(var(--surface-subtle) 1px, transparent 1px),
+      linear-gradient(90deg, var(--surface-subtle) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* ── Sticker / floating element helper ───────────────────── */
+  .sticker {
+    @apply absolute z-10 rounded-xl border-2 border-surface-border
+           bg-white shadow-brut-sm font-bold text-xs px-3 py-1.5
+           pointer-events-none select-none;
+  }
+
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GLOBAL PAGE TRANSITIONS
+   ═══════════════════════════════════════════════════════════════ */
+.page-enter {
+  animation: fadeUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}

@@ -9,11 +9,12 @@ export default function InventoryTable({ products, onAdjust }) {
   const low = products.filter((p) => Number(p.stock_quantity) <= Number(p.low_stock_threshold || 0))
 
   function submit() {
+    const signedQuantity = movementType === 'stock_removed' ? -Math.abs(Number(quantity)) : Math.abs(Number(quantity))
     onAdjust({
       store_id: active.store_id,
       product_id: active.id,
       movement_type: movementType,
-      quantity: Number(quantity),
+      quantity: signedQuantity,
       reason,
     })
     setActive(null)
