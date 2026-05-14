@@ -39,6 +39,7 @@ class ProductCreateRequest(BaseModel):
     name: str
     description: str | None = None
     category: str | None = None
+    type: str = "product"
     price: float
     image_url: str | None = None
     stock_quantity: int = 0
@@ -70,6 +71,14 @@ async def post_store(payload: StoreCreateRequest, db: AsyncSession = Depends(get
     user = await db.get(User, payload.user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    # Enforce free plan store limit
+    from app.config import settings
+
+    if getattr(user, "plan", "free") == "free":
+        existing = (await db.execute(select(Store).where(Store.user_id == user.id))).scalars().all()
+        if len(existing) >= settings.free_store_limit:
+            raise HTTPException(status_code=403, detail="Free plan allows only one store")
+
     store = await create_store(db, user, payload.dict())
     user.persona_mode = "storefront_extension"
     return _store(store)
@@ -115,6 +124,21 @@ async def post_product(payload: ProductCreateRequest, db: AsyncSession = Depends
     store = await db.get(Store, payload.store_id)
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
+    # Enforce product/service limits for free plan users
+    user = await db.get(User, store.user_id)
+    from app.config import settings
+
+    # Validate type
+    ptype = getattr(payload, "type", "product")
+
+    if ptype == "product" and (payload.stock_quantity is None):
+        raise HTTPException(status_code=400, detail="Products require stock_quantity")
+
+    if getattr(user, "plan", "free") == "free":
+        products = (await db.execute(select(Product).where(Product.user_id == user.id))).scalars().all()
+        if len(products) >= settings.free_product_limit:
+            raise HTTPException(status_code=403, detail="Free plan product limit reached")
+
     product = await create_product(db, store, payload.dict())
     return _product(product)
 

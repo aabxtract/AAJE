@@ -18,6 +18,7 @@ class User(Base):
     whatsapp_connected = Column(Boolean, default=False)
     location = Column(String(100))
     business_description = Column(Text)
+    plan = Column(String(30), default="free")
     preferred_language = Column(String(10), default="en")
     persona_mode = Column(String(40), default="normal_business_manager")
     pin_hash = Column(String(255))
