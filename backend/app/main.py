@@ -12,13 +12,45 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routes.admin import router as admin_router
-from app.routes.browser_flow import router as browser_flow_router
-from app.routes.intelligence_api import router as intelligence_router
-from app.routes.mono_webhook import router as mono_router
-from app.routes.squad_webhook import router as squad_router
+from app.database import engine, Base
 from app.routes.webhook import router as whatsapp_router
 from app.routes.whatsapp_flow_endpoint import router as whatsapp_flow_endpoint_router
+from app.routes.public_store import router as public_store_router
+from storefront.events import router as storefront_events_router
+from storefront.routes import router as storefront_api_router
+
+# Optional routers: import lazily so the server can run without every optional
+# third-party integration installed. Missing integrations will be skipped.
+browser_flow_router = None
+intelligence_router = None
+mono_router = None
+squad_router = None
+admin_router = None
+
+try:
+    from app.routes.browser_flow import router as browser_flow_router
+except Exception:
+    browser_flow_router = None
+
+try:
+    from app.routes.intelligence_api import router as intelligence_router
+except Exception:
+    intelligence_router = None
+
+try:
+    from app.routes.mono_webhook import router as mono_router
+except Exception:
+    mono_router = None
+
+try:
+    from app.routes.squad_webhook import router as squad_router
+except Exception:
+    squad_router = None
+
+try:
+    from app.routes.admin import router as admin_router
+except Exception:
+    admin_router = None
 
 # Import all models so Base.metadata knows about them
 import app.models  # noqa: F401
@@ -70,11 +102,19 @@ app.add_middleware(
 
 app.include_router(whatsapp_router)
 app.include_router(whatsapp_flow_endpoint_router)
-app.include_router(browser_flow_router)
-app.include_router(squad_router)
-app.include_router(mono_router)
-app.include_router(intelligence_router)
-app.include_router(admin_router, prefix="/admin")
+if browser_flow_router:
+    app.include_router(browser_flow_router)
+if squad_router:
+    app.include_router(squad_router)
+if mono_router:
+    app.include_router(mono_router)
+if intelligence_router:
+    app.include_router(intelligence_router)
+if admin_router:
+    app.include_router(admin_router, prefix="/admin")
+app.include_router(public_store_router)
+app.include_router(storefront_api_router, prefix="/api/storefront", tags=["storefront"])
+app.include_router(storefront_events_router, prefix="/api/events", tags=["storefront_events"])
 
 
 @app.get("/health")
