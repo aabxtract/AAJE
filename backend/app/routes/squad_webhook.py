@@ -1,3 +1,31 @@
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.services.squad_payment_service import verify_webhook
+from app.services.order_service import mark_order_paid
+
+router = APIRouter(prefix="/webhooks/squad", tags=["squad_webhooks"])
+
+
+@router.post("/payment")
+async def squad_payment_webhook(req: Request, db: AsyncSession = Depends(get_db)):
+    payload = await req.json()
+    # Basic verification (expand in production)
+    ok = await verify_webhook(payload)
+    if not ok:
+        raise HTTPException(status_code=400, detail="invalid webhook")
+
+    # Expected payload keys: order_id, squad_ref, status
+    order_id = payload.get("order_id")
+    squad_ref = payload.get("squad_ref")
+    status = payload.get("status")
+
+    if status == "paid" and order_id:
+        await mark_order_paid(db, order_id, squad_ref)
+        return {"ok": True}
+
+    return {"ok": False, "reason": "unsupported event"}
 """
 Squad webhook — processes incoming payment notifications from Squad.
 
