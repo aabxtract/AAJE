@@ -1,52 +1,56 @@
 """
-Message intent detection for the WhatsApp session router.
-Supports English, Yoruba, Igbo, Hausa, and Nigerian Pidgin keywords.
+Lightweight intent detection for AAJE WhatsApp storefront operations.
+
+Translation can support UX, but the product center is operational clarity:
+orders, inventory, sales, withdrawals, campaigns, and BizPrint.
 """
 
 
 def detect_intent(message: str) -> str:
     msg = message.lower().strip()
 
-    # Ordered by specificity — more specific intents first
     intents = {
-        "add_supplier": [
-            "add supplier", "new supplier", "save supplier", "save contact",
+        "store_link": [
+            "store link", "send my store", "share my store", "my link", "store url",
         ],
-        "debrief": [
-            "debrief", "daily report", "today report", "how today go",
-            "my day", "end of day", "report today",
+        "today_sales": [
+            "what sold today", "sold today", "sales today", "today sales", "revenue today",
         ],
-        "score": [
-            "score", "credit", "passport", "my score", "rating", "grade",
-            "credit score", "economic identity",
+        "recent_orders": [
+            "recent orders", "latest orders", "show orders", "orders",
         ],
-        "summary": [
-            "summary", "report", "how far", "how i dey", "my report",
-            "analytics", "how business", "business report",
+        "pending_orders": [
+            "pending orders", "unfulfilled orders", "orders pending",
+        ],
+        "mark_order_fulfilled": [
+            "mark fulfilled", "mark order fulfilled", "fulfilled", "delivered",
+        ],
+        "low_stock": [
+            "low stock", "low inventory", "what is low", "restock",
+        ],
+        "update_inventory": [
+            "update stock", "add stock", "set stock", "update inventory", "add inventory",
+        ],
+        "add_product": [
+            "add product", "new product", "create product",
         ],
         "withdraw": [
-            "withdraw", "cash out", "i need money", "send to my account",
-            "abeg send", "send money to me", "take out",
+            "withdraw", "cash out", "payout", "send to my account",
         ],
-        "pay": [
-            "pay", "send money", "transfer", "settle", "buy from",
-            "pay supplier", "pay vendor",
+        "campaign_performance": [
+            "campaign", "campaign performance", "marketing", "growth", "source", "referral",
         ],
-        "balance": [
-            "balance", "how much", "my money", "kolo", "accounts", "check",
-            "vault", "owo mi", "ego m", "kudi na", "wetin remain",
+        "bizprint": [
+            "bizprint", "business profile", "store profile",
         ],
         "support": [
-            "human", "person", "speak to someone", "real person", "agent",
-            "talk to someone", "customer care", "customer service",
+            "human", "person", "speak to someone", "real person", "customer care",
         ],
         "help": [
-            "help", "menu", "what can you do", "options", "wetin you fit do",
+            "help", "menu", "what can you do", "options",
         ],
         "greeting": [
-            "hi", "hello", "hey", "start", "begin", "good morning",
-            "good afternoon", "good evening", "e kaaro", "ndewo",
-            "sannu", "how far",
+            "hi", "hello", "hey", "start", "good morning", "good afternoon", "good evening",
         ],
     }
 

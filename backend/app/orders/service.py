@@ -6,9 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Order, OrderItem, Product
-from app.services.inventory_service import decrease_stock, record_movement
+from app.inventory.service import decrease_stock, record_movement
 from app.services import intelligence_sync
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 from app.models.user import User
 from app.database import AsyncSession
 
@@ -106,7 +106,11 @@ async def mark_order_paid(session: AsyncSession, order_id: uuid.UUID, squad_ref:
         if store and store.contact_whatsapp:
             await send_text(
                 store.contact_whatsapp,
-                f"Payment received for order {order.id}. Amount: {order.total_amount}",
+                (
+                    f"New paid storefront order - {str(order.id)[:8]}\n"
+                    f"Amount: NGN {float(order.total_amount or 0):,.2f}\n"
+                    "Inventory has been updated."
+                ),
             )
     except Exception:
         pass

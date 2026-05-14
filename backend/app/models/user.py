@@ -1,7 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Column, DateTime, String, Text, Uuid
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -10,11 +9,17 @@ from app.database import Base
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    whatsapp_no = Column(String(20), unique=True, nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), unique=True)
+    password_hash = Column(String(255))
     full_name = Column(String(100))
+    phone = Column(String(20))
+    whatsapp_no = Column(String(20), unique=True, nullable=True)
+    whatsapp_connected = Column(Boolean, default=False)
     location = Column(String(100))
+    business_description = Column(Text)
     preferred_language = Column(String(10), default="en")
+    persona_mode = Column(String(40), default="normal_business_manager")
     pin_hash = Column(String(255))
     verified_bank_account = Column(String(20))
     verified_bank_code = Column(String(10))

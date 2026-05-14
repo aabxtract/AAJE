@@ -8,7 +8,7 @@ from app.models.score import Score
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.vault import Vault
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 from app.services.whatsapp_flows import send_passport_flow
 from app.utils.formatters import format_naira
 from app.utils.pii_scrubber import scrub

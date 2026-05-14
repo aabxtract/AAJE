@@ -5,11 +5,20 @@ from app.models.score import Score
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.vault import Vault
-from app.models.store import Store
-from app.models.product import Product
-from app.models.order import Order
-from app.models.order_item import OrderItem
-from app.models.inventory_movement import InventoryMovement
+from app.models.commerce import InventoryMovement, Order, OrderItem, Product, Store
+
+# Core local models
+from app.models.intelligence import (
+    AuditLog,
+    BizPrintSnapshot,
+    Consent,
+    Event,
+    FlowSession,
+    LedgerEntry,
+    ScoreEvent,
+)
+from app.models.money import FailedTransfer, MonoTransaction, Supplier, VirtualAccount, Wallet
+from app.models.marketing import CampaignConversion, CampaignEvent, CampaignLink, CampaignVisit
 
 __all__ = [
     "User",
@@ -24,4 +33,20 @@ __all__ = [
     "Order",
     "OrderItem",
     "InventoryMovement",
+    "Event",
+    "LedgerEntry",
+    "FlowSession",
+    "Consent",
+    "ScoreEvent",
+    "BizPrintSnapshot",
+    "AuditLog",
+    "VirtualAccount",
+    "Wallet",
+    "Supplier",
+    "MonoTransaction",
+    "FailedTransfer",
+    "CampaignLink",
+    "CampaignVisit",
+    "CampaignEvent",
+    "CampaignConversion",
 ]

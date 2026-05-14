@@ -24,8 +24,8 @@ from app.models.vault import Vault
 from app.redis import push_state_history, save_session, set_mono_pending, clear_state_history
 from app.services.mono import BANK_CODES, lookup_account
 from app.services.pin import hash_pin, is_valid_pin, verify_pin
-from app.services.squad import create_virtual_account, register_customer
-from app.services.whatsapp_client import send_cta_button, send_text, send_translated
+from app.payments.squad import create_virtual_account, register_customer
+from app.whatsapp.service import send_cta_button, send_text, send_translated
 from app.services.whatsapp_flows import (
     BUSINESS_FLOW,
     PIN_SETUP_FLOW,

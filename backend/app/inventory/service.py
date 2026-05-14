@@ -4,7 +4,7 @@ from sqlalchemy import update, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Product, InventoryMovement
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 from app.models import Product as ProductModel
 from app.models import Store as StoreModel
 
@@ -51,7 +51,7 @@ async def decrease_stock(session: AsyncSession, product_id: uuid.UUID, qty: int)
             if store and store.contact_whatsapp:
                 await send_text(
                     store.contact_whatsapp,
-                    f"Low stock alert: '{prod.name}' has {prod.stock_quantity} left.",
+                    f"Low stock alert - {prod.name}\nStock left: {prod.stock_quantity}\nReply *add stock {prod.name} 10* to update inventory.",
                 )
     except Exception:
         pass

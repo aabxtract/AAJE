@@ -31,25 +31,7 @@ def _verify_meta_signature(payload: bytes, signature: str) -> bool:
 
 
 def _initial_data(flow_token: str) -> dict:
-    flow_type = flow_token.split(":", 1)[0] if flow_token else ""
-    if flow_type == "onboarding_profile":
-        from app.services.whatsapp_flows import PROFILE_FLOW_DATA
-
-        return PROFILE_FLOW_DATA
-    if flow_type == "business_setup":
-        from app.services.whatsapp_flows import BUSINESS_FLOW_DATA
-
-        return BUSINESS_FLOW_DATA
-    if flow_type == "pin_confirm":
-        return {"action_label": "this action"}
-    if flow_type == "business_passport":
-        return {
-            "full_name": "AAJE Trader",
-            "trader_score": "0",
-            "credit_grade": "D",
-            "recommended_loan_ceiling": "0",
-        }
-    return {}
+    return {"status": "legacy_whatsapp_flows_disabled"}
 
 
 def _flow_response(request_body: dict) -> dict:

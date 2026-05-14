@@ -4,7 +4,7 @@ import secrets
 
 from app.config import settings
 from app.redis import save_flow_session, save_session
-from app.services.whatsapp_client import send_cta_button, send_text
+from app.whatsapp.service import send_cta_button, send_text
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,13 @@ async def _send_browser_flow(
             "data": payload,
         },
     )
-    await send_cta_button(whatsapp_no, f"{body}\n\nOpen your secure AAJE screen here:", cta, url)
+    from app.intelligence.llm import translate_message
+    from app.redis import get_session
+
+    session = await get_session(whatsapp_no)
+    language = session.get("language", "en")
+    message = await translate_message(f"{body}\n\nOpen your secure AAJE screen here:", language)
+    await send_cta_button(whatsapp_no, message, cta, url)
     return True
 
 

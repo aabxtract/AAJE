@@ -1,7 +1,7 @@
 import bcrypt
 
 from app.redis import clear_pin_attempts, increment_pin_attempts, save_session
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 
 INVALID_PINS = {
     "1111", "2222", "3333", "4444", "5555", "6666", "7777", "8888",
@@ -50,17 +50,7 @@ async def handle_pin_input(whatsapp_no: str, pin_input: str, session: dict):
             session["pin_action"] = None
             session["pending_flow"] = None
             await save_session(whatsapp_no, session)
-
-            if action == "withdrawal":
-                from app.agents.withdrawal_agent import execute_withdrawal
-
-                await execute_withdrawal(whatsapp_no, session, db)
-            elif action == "payment":
-                from app.agents.payment_agent import execute_payment
-
-                await execute_payment(whatsapp_no, session, db)
-            else:
-                await save_session(whatsapp_no, session)
+            await send_text(whatsapp_no, "PIN verified. Complete sensitive operations in the secure browser flow.")
             return
 
         attempts = await increment_pin_attempts(whatsapp_no)
