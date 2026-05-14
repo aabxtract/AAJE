@@ -39,6 +39,7 @@ class ProductCreateRequest(BaseModel):
     name: str
     description: str | None = None
     category: str | None = None
+    type: str = "product"
     price: float
     image_url: str | None = None
     stock_quantity: int = 0
@@ -70,6 +71,14 @@ async def post_store(payload: StoreCreateRequest, db: AsyncSession = Depends(get
     user = await db.get(User, payload.user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    # Enforce free plan store limit
+    from app.config import settings
+
+    if getattr(user, "plan", "free") == "free":
+        existing = (await db.execute(select(Store).where(Store.user_id == user.id))).scalars().all()
+        if len(existing) >= settings.free_store_limit:
+            raise HTTPException(status_code=403, detail="Free plan allows only one store")
+
     store = await create_store(db, user, payload.dict())
     user.persona_mode = "storefront_extension"
     return _store(store)
@@ -115,6 +124,21 @@ async def post_product(payload: ProductCreateRequest, db: AsyncSession = Depends
     store = await db.get(Store, payload.store_id)
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
+    # Enforce product/service limits for free plan users
+    user = await db.get(User, store.user_id)
+    from app.config import settings
+
+    # Validate type
+    ptype = getattr(payload, "type", "product")
+
+    if ptype == "product" and (payload.stock_quantity is None):
+        raise HTTPException(status_code=400, detail="Products require stock_quantity")
+
+    if getattr(user, "plan", "free") == "free":
+        products = (await db.execute(select(Product).where(Product.user_id == user.id))).scalars().all()
+        if len(products) >= settings.free_product_limit:
+            raise HTTPException(status_code=403, detail="Free plan product limit reached")
+
     product = await create_product(db, store, payload.dict())
     return _product(product)
 
@@ -123,6 +147,34 @@ async def post_product(payload: ProductCreateRequest, db: AsyncSession = Depends
 async def get_products(store_id: str, db: AsyncSession = Depends(get_db)):
     products = (await db.execute(select(Product).where(Product.store_id == store_id))).scalars().all()
     return [_product(product) for product in products]
+
+
+@router.get("/product/{product_id}")
+async def get_product(product_id: str, db: AsyncSession = Depends(get_db)):
+    product = await db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return _product(product)
+
+
+@router.put("/products/{product_id}")
+async def update_product(product_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
+    product = await db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    for k, v in payload.items():
+        if hasattr(product, k):
+            setattr(product, k, v)
+    return _product(product)
+
+
+@router.delete("/products/{product_id}")
+async def delete_product(product_id: str, db: AsyncSession = Depends(get_db)):
+    product = await db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product.is_active = False
+    return {"status": "deleted", "product_id": str(product.id)}
 
 
 @router.post("/orders")
@@ -143,6 +195,27 @@ async def get_orders(store_id: str, db: AsyncSession = Depends(get_db)):
     return [_order(order) for order in orders]
 
 
+@router.get("/order/{order_id}")
+async def get_order(order_id: str, db: AsyncSession = Depends(get_db)):
+    order = await db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return _order(order)
+
+
+@router.put("/orders/{order_id}/status")
+async def update_order_status(order_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
+    order = await db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    status = payload.get("order_status") or payload.get("status")
+    if not status:
+        raise HTTPException(status_code=400, detail="status is required")
+    order.order_status = status
+    order.status = status
+    return _order(order)
+
+
 @router.get("/inventory/{store_id}")
 async def get_inventory(store_id: str, db: AsyncSession = Depends(get_db)):
     products = (await db.execute(select(Product).where(Product.store_id == store_id))).scalars().all()
@@ -153,6 +226,17 @@ async def get_inventory(store_id: str, db: AsyncSession = Depends(get_db)):
         }
         for product in products
     ]
+
+
+@router.get("/inventory/low-stock/{store_id}")
+async def get_low_stock(store_id: str, db: AsyncSession = Depends(get_db)):
+    products = (await db.execute(select(Product).where(Product.store_id == store_id))).scalars().all()
+    low = [
+        _product(p)
+        for p in products
+        if (p.stock_quantity or 0) <= (p.low_stock_threshold or 0)
+    ]
+    return low
 
 
 @router.post("/inventory/adjust")

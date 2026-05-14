@@ -35,6 +35,7 @@ from app.bizprint.routes import router as bizprint_router
 from app.storefront.routes import router as storefront_router
 from app.routes.store_aliases import router as store_alias_router
 from app.routes.intelligence_ecosystem import router as intelligence_ecosystem_router
+from app.routes.plans import router as plans_router
 
 # Third-party or complex integrations with safety checks
 browser_flow_router = None
@@ -134,6 +135,7 @@ app.include_router(storefront_router)
 app.include_router(store_alias_router)
 app.include_router(whatsapp_ecosystem_router)
 app.include_router(intelligence_ecosystem_router)
+app.include_router(plans_router)
 
 # Optional / External Routers
 if browser_flow_router:

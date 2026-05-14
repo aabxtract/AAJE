@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     jwt_expiry_hours: int = 168
+    # Free plan limits for hackathon MVP
+    free_store_limit: int = 1
+    free_product_limit: int = 10
 
 
 settings = Settings()

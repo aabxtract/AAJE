@@ -27,6 +27,12 @@ class SignupRequest(BaseModel):
     create_squad_account: bool = True
 
 
+class GoogleSignupRequest(BaseModel):
+    email: str
+    full_name: str | None = None
+    phone: str | None = None
+
+
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -38,6 +44,10 @@ class ConnectWhatsappRequest(BaseModel):
 
 @router.post("/signup")
 async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
+    # For email-based signup, require phone collection per spec
+    if not payload.phone:
+        raise HTTPException(status_code=400, detail="Phone number required for email signups")
+
     existing = (await db.execute(select(User).where(User.email == payload.email.lower()))).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=409, detail="Email already exists")
@@ -66,6 +76,27 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
             "squad_virtual_account_number": store.squad_virtual_account_number,
         },
     }
+
+
+@router.post("/google-signin")
+async def google_signin(payload: GoogleSignupRequest, db: AsyncSession = Depends(get_db)):
+    # Placeholder/mock google auth: accept email and optionally create user
+    existing = (await db.execute(select(User).where(User.email == payload.email.lower()))).scalar_one_or_none()
+    if existing:
+        return {"token": _create_token(str(existing.id)), "user": _user_payload(existing)}
+
+    user = User(
+        email=payload.email.lower(),
+        full_name=payload.full_name or "",
+        phone=payload.phone,
+        onboarding_complete=True,
+        persona_mode="storefront_extension",
+        plan="free",
+    )
+    db.add(user)
+    await db.flush()
+    # Do not create storefront automatically for google mock; let client call AI create flow
+    return {"token": _create_token(str(user.id)), "user": _user_payload(user)}
 
 
 @router.post("/login")
@@ -158,6 +189,7 @@ def _user_payload(user: User) -> dict:
     return {
         "id": str(user.id),
         "email": user.email,
+        "plan": getattr(user, "plan", "free"),
         "full_name": user.full_name,
         "phone": user.phone,
         "whatsapp_no": user.whatsapp_no,

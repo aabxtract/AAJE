@@ -116,6 +116,14 @@ async def create_campaign(payload: CampaignCreateRequest, db: AsyncSession = Dep
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
 
+    # Only premium users may create campaign links
+    from app.models.user import User
+    owner = await db.get(User, store.user_id)
+    if not owner:
+        raise HTTPException(status_code=404, detail="Store owner not found")
+    if getattr(owner, "plan", "free") != "premium":
+        raise HTTPException(status_code=403, detail="Campaign links are available to premium users only")
+
     source = _slug(payload.custom_source or payload.source)
     campaign_name = payload.campaign_name.strip()
     if not campaign_name:
