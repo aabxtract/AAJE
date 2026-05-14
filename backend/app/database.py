@@ -27,14 +27,18 @@ class Base(DeclarativeBase):
     pass
 
 
-def add_missing_sqlite_columns(connection):
-    """Add newly introduced model columns to an existing local SQLite DB.
+def add_missing_model_columns(connection):
+    """Add newly introduced model columns to an existing database.
 
     ``Base.metadata.create_all`` creates missing tables, but it does not alter
-    existing tables. Local dev databases can therefore lag behind the models.
-    This additive shim keeps development webhooks from crashing on old schemas.
+    existing tables. AAJE's schema has moved from the older WhatsApp/banking
+    shape into the storefront platform shape, so existing dev and hosted
+    databases can lag behind the current SQLAlchemy models.
+
+    This shim is intentionally additive: it creates missing columns only and
+    leaves existing data, constraints, and indexes untouched.
     """
-    if connection.dialect.name != "sqlite":
+    if connection.dialect.name not in {"sqlite", "postgresql"}:
         return
 
     inspector = inspect(connection)
@@ -52,6 +56,39 @@ def add_missing_sqlite_columns(connection):
             connection.exec_driver_sql(
                 f"ALTER TABLE {quoted_table} ADD COLUMN {quoted_column} {column_type}"
             )
+
+
+def normalize_known_schema_drift(connection):
+    """Repair known legacy schema details that column backfill cannot cover."""
+    if connection.dialect.name != "postgresql":
+        return
+
+    inspector = inspect(connection)
+    existing_tables = set(inspector.get_table_names())
+
+    if "users" in existing_tables:
+        connection.exec_driver_sql("ALTER TABLE users ALTER COLUMN whatsapp_no DROP NOT NULL")
+
+    if "order_items" in existing_tables:
+        connection.exec_driver_sql(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM pg_attribute
+                    WHERE attrelid = 'order_items'::regclass
+                      AND attname = 'total_price'
+                      AND attgenerated <> ''
+                ) THEN
+                    ALTER TABLE order_items ALTER COLUMN total_price DROP EXPRESSION;
+                END IF;
+            END $$;
+            """
+        )
+
+
+add_missing_sqlite_columns = add_missing_model_columns
 
 
 async def get_db():

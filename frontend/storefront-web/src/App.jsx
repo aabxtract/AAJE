@@ -1,5 +1,6 @@
 import { Route, Routes, Navigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import Landing from './pages/Landing'
 import Signup from './pages/Signup'
 import Onboarding from './pages/Onboarding'
 import StorePreview from './pages/StorePreview'
@@ -42,6 +43,8 @@ function ProtectedRoute({ children }) {
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<Landing />} />
+
       {/* Onboarding flow */}
       <Route path="/signup" element={<Signup />} />
       <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
@@ -59,7 +62,7 @@ export default function App() {
       <Route path="/store/:slug" element={<StorePage />} />
 
       {/* Default redirect */}
-      <Route path="/" element={<Navigate to="/signup" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

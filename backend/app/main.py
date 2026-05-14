@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import add_missing_sqlite_columns, engine, Base
+from app.database import add_missing_model_columns, normalize_known_schema_drift, engine, Base
 
 from app.whatsapp.routes import router as whatsapp_router
 from app.routes.whatsapp_ecosystem import router as whatsapp_ecosystem_router
@@ -87,7 +87,8 @@ async def lifespan(application: FastAPI):
     # Create tables if they don't exist
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(add_missing_sqlite_columns)
+        await conn.run_sync(add_missing_model_columns)
+        await conn.run_sync(normalize_known_schema_drift)
     logger.info("Database tables verified/created")
 
     # Start scheduler
@@ -154,5 +155,5 @@ app.include_router(storefront_events_router, prefix="/api/events", tags=["storef
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "environment": settings.app_env}
+    return {"status": "ok", "service": "aaje-backend"}
 

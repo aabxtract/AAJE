@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Send, Loader2, Sparkles, ArrowRight } from 'lucide-react'
 
@@ -40,6 +40,14 @@ export default function Onboarding() {
   const currentQuestion = AI_QUESTIONS[currentIndex]
   const isComplete = currentIndex === AI_QUESTIONS.length
 
+  useEffect(() => {
+    const seed = JSON.parse(sessionStorage.getItem('aaje_onboarding_seed') || '{}')
+    if (seed.business) {
+      setAnswers((previous) => ({ ...previous, business: seed.business }))
+      setInput(seed.business)
+    }
+  }, [])
+
   function handleSubmitAnswer() {
     if (!input.trim() && currentQuestion.type !== 'choice') return
 
@@ -68,7 +76,7 @@ export default function Onboarding() {
 
       const generatedStore = {
         name: finalAnswers.name || 'My Store',
-        slug: finalAnswers.name.toLowerCase().replace(/\s+/g, '-'),
+        slug: (finalAnswers.name || 'my-store').toLowerCase().replace(/\s+/g, '-'),
         description: `${finalAnswers.business || 'Quality products'} for ${finalAnswers.customers || 'everyone'}`,
         category: finalAnswers.business,
         theme: finalAnswers.style,
@@ -80,6 +88,7 @@ export default function Onboarding() {
       }
 
       setStore(generatedStore)
+      sessionStorage.setItem('aaje_store', JSON.stringify(generatedStore))
       setCurrentIndex(currentIndex + 1)
     } finally {
       setLoading(false)
