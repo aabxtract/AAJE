@@ -200,6 +200,14 @@ async def create_order(db: AsyncSession, store: Store, payload: dict) -> Order:
     if not items_payload:
         raise ValueError("Order requires at least one item")
 
+    # Enforce cart max size
+    if len(items_payload) > 4:
+        raise ValueError("Cart may contain at most 4 products")
+
+    # Require customer contact info for guest checkout
+    if not payload.get("customer_phone") or not payload.get("customer_name"):
+        raise ValueError("Customer name and phone are required")
+
     total = Decimal("0")
     resolved_items = []
     for item in items_payload:
