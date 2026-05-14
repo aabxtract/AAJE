@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.squad_payment_service import verify_webhook
-from app.services.order_service import mark_order_paid
+from app.orders.service import mark_order_paid
 
 router = APIRouter(prefix="/webhooks/squad", tags=["squad_webhooks"])
 
@@ -54,10 +54,10 @@ from app.models.income_stream import IncomeStream
 from app.models.commerce import Order, Store
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.services.events import emit_event
-from app.services.notifier import notify_anomaly, notify_split
+from app.events.handlers import emit_event
+from app.whatsapp.notifier import notify_anomaly, notify_split
 from app.services.slicer import split_incoming_payment
-from app.services.squad import transfer
+from app.payments.squad import transfer
 from app.utils.formatters import format_naira
 
 logger = logging.getLogger(__name__)
@@ -257,7 +257,7 @@ async def squad_webhook(request: Request):
 
     # 9. Legacy non-storefront payments no longer enter a WhatsApp AI agent.
     if user.whatsapp_no:
-        from app.services.whatsapp_client import send_text
+        from app.whatsapp.service import send_text
         try:
             await send_text(
                 user.whatsapp_no,

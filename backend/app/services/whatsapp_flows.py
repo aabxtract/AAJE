@@ -4,7 +4,7 @@ import secrets
 
 from app.config import settings
 from app.redis import save_flow_session, save_session
-from app.services.whatsapp_client import send_cta_button, send_text
+from app.whatsapp.service import send_cta_button, send_text
 
 logger = logging.getLogger(__name__)
 

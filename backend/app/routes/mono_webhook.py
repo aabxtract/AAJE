@@ -7,7 +7,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.user import User
 from app.redis import clear_mono_pending
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

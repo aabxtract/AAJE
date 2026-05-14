@@ -22,7 +22,7 @@ from app.config import settings
 from app.models.income_stream import IncomeStream
 from app.models.transaction import Transaction
 from app.models.vault import Vault
-from app.services.squad import transfer
+from app.payments.squad import transfer
 from app.utils.formatters import format_naira
 
 logger = logging.getLogger(__name__)

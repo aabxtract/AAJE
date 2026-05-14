@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Store, Product
-from app.services.order_service import create_order
+from app.orders.service import create_order
 from app.services.squad_payment_service import create_payment_link
 
 router = APIRouter(tags=["public_store"]) 

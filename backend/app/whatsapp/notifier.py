@@ -4,7 +4,7 @@ from sqlalchemy import insert
 
 from app.database import AsyncSessionLocal
 from app.models.notification_log import NotificationLog
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 from app.utils.formatters import format_naira
 
 logger = logging.getLogger(__name__)

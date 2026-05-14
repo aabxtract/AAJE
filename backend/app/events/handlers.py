@@ -15,7 +15,7 @@ from app.models.intelligence import Event, LedgerEntry
 from app.models.money import Wallet
 from app.models.notification_log import NotificationLog
 from app.models.transaction import Transaction
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 
 logger = logging.getLogger(__name__)
 

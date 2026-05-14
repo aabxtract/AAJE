@@ -11,8 +11,8 @@ from app.database import get_db
 from app.models.money import FailedTransfer, Supplier, Wallet
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.services.events import emit_event
-from app.services.squad import transfer
+from app.events.handlers import emit_event
+from app.payments.squad import transfer
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
 

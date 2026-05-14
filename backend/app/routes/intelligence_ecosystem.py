@@ -9,7 +9,7 @@ from app.intelligence.scorer import recalculate_user_score
 from app.models.commerce import Store
 from app.models.intelligence import BizPrintSnapshot
 from app.models.user import User
-from app.services.events import emit_event
+from app.events.handlers import emit_event
 
 router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
 

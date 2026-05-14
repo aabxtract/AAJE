@@ -12,7 +12,7 @@ from app.models.user import User
 from app.intelligence.agent import agent_reason
 from app.intelligence.context_builder import build_context, determine_persona
 from app.intelligence import tools as intelligence_tools
-from app.services.whatsapp_client import send_translated
+from app.whatsapp.service import send_translated
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ from app.database import AsyncSessionLocal
 from app.models.escalation import Escalation
 from app.models.user import User
 from app.redis import save_session
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 from app.utils.frustration import detect_frustration
 
 logger = logging.getLogger(__name__)

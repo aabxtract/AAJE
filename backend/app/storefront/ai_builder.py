@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Store, Product
 from app.config import settings
-from app.services.whatsapp_client import send_cta_button
+from app.whatsapp.service import send_cta_button
 
 
 def _slugify(text: str) -> str:

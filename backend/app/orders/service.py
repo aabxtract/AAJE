@@ -6,9 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Order, OrderItem, Product
-from app.services.inventory_service import decrease_stock, record_movement
+from app.inventory.service import decrease_stock, record_movement
 from app.services import intelligence_sync
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 from app.models.user import User
 from app.database import AsyncSession
 

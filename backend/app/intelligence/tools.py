@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commerce import Order, Product, Store
 from app.models.intelligence import BizPrintSnapshot
-from app.services.events import emit_event
+from app.events.handlers import emit_event
 from app.services.flows import create_flow_session
-from app.services.storefront import create_product
+from app.storefront.service import create_product
 
 
 async def get_store_by_user(db: AsyncSession, user_id: str):
@@ -264,7 +264,7 @@ async def send_whatsapp_notification(user_id: str, message: str):
 
 
 async def get_marketing_analytics_tool(db: AsyncSession, user_id: str, days: int = 7):
-    from app.routes.marketing import get_marketing_analytics
+    from app.campaigns.routes import get_marketing_analytics
     store = await get_store_by_user(db, user_id)
     if not store:
         return {"error": "Store not found"}

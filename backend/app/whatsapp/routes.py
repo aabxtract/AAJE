@@ -121,7 +121,7 @@ async def process_message_safe(sender: str, message: str):
     except Exception:
         logger.exception("Message processing failed for %s", sender)
         try:
-            from app.services.whatsapp_client import send_text
+            from app.whatsapp.service import send_text
 
             await send_text(sender, "Something went wrong. Please try again in a moment.")
         except Exception:
@@ -209,7 +209,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
 
     count = await set_rate_limit(sender)
     if count > 10:
-        from app.services.whatsapp_client import send_text
+        from app.whatsapp.service import send_text
 
         logger.warning("Rate limited WhatsApp sender %s", _mask_sender(sender))
         await send_text(sender, "Please slow down. Try again in a minute.")

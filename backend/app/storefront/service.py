@@ -9,8 +9,8 @@ from app.models.commerce import InventoryMovement, Order, OrderItem, Product, St
 from app.models.marketing import CampaignLink
 from app.models.money import VirtualAccount, Wallet
 from app.models.user import User
-from app.services.events import emit_event
-from app.services.squad import create_virtual_account
+from app.events.handlers import emit_event
+from app.payments.squad import create_virtual_account
 
 
 def _ascii_lower(value: str) -> str:

@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import add_missing_sqlite_columns, engine, Base
 
-from app.routes.webhook import router as whatsapp_router
+from app.whatsapp.routes import router as whatsapp_router
 from app.routes.whatsapp_ecosystem import router as whatsapp_ecosystem_router
 from app.routes.whatsapp_flow_endpoint import router as whatsapp_flow_endpoint_router
 
@@ -24,15 +24,15 @@ from storefront.events import router as storefront_events_router
 from storefront.routes import router as storefront_api_router
 
 # Core app routers
-from app.routes.auth import router as auth_router
+from app.auth.routes import router as auth_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.wallet import router as wallet_router
-from app.routes.events import router as events_router
-from app.routes.payments import router as payments_router
-from app.routes.marketing import router as marketing_router
+from app.events.routes import router as events_router
+from app.payments.routes import router as payments_router
+from app.campaigns.routes import router as marketing_router
 from app.routes.institutional import router as institutional_router
-from app.routes.bizprint import router as bizprint_router
-from app.routes.storefront import router as storefront_router
+from app.bizprint.routes import router as bizprint_router
+from app.storefront.routes import router as storefront_router
 from app.routes.store_aliases import router as store_alias_router
 from app.routes.intelligence_ecosystem import router as intelligence_ecosystem_router
 
@@ -59,7 +59,7 @@ except Exception:
     pass
 
 try:
-    from app.routes.squad_webhook import router as squad_router
+    from app.payments.webhook import router as squad_router
 except Exception:
     pass
 

@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.commerce import Order, Product, Store
-from app.routes.marketing import find_campaign_by_ref, record_campaign_visit
-from app.services.storefront import create_order, create_product, normalize_store_slug
+from app.campaigns.routes import find_campaign_by_ref, record_campaign_visit
+from app.storefront.service import create_order, create_product, normalize_store_slug
 
 router = APIRouter(tags=["store-compat"])
 

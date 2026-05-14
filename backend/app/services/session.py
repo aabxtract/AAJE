@@ -22,8 +22,8 @@ from app.models.money import Wallet
 from app.models.user import User
 from app.redis import clear_session, clear_state_history, get_session, save_session
 from app.services.flows import create_flow_session
-from app.services.storefront import create_product
-from app.services.whatsapp_client import send_text
+from app.storefront.service import create_product
+from app.whatsapp.service import send_text
 
 RESET_COMMANDS = {"restart", "reset", "start over", "start again", "begin again"}
 BACK_COMMANDS = {"back", "undo", "go back", "previous", "prev", "return"}

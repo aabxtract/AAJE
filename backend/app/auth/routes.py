@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
-from app.services.storefront import create_storefront_from_description
+from app.storefront.service import create_storefront_from_description
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

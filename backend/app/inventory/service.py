@@ -4,7 +4,7 @@ from sqlalchemy import update, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Product, InventoryMovement
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 from app.models import Product as ProductModel
 from app.models import Store as StoreModel
 

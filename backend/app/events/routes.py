@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.services.events import emit_event
+from app.events.handlers import emit_event
 
 router = APIRouter(prefix="/api", tags=["events"])
 

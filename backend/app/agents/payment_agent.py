@@ -9,8 +9,8 @@ from app.models.user import User
 from app.models.vault import Vault
 from app.redis import save_session
 from app.services.mono import BANK_CODES
-from app.services.squad import transfer
-from app.services.whatsapp_client import send_text
+from app.payments.squad import transfer
+from app.whatsapp.service import send_text
 from app.services.whatsapp_flows import send_pin_confirm_flow
 from app.utils.formatters import format_naira
 

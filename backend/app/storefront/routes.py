@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.commerce import InventoryMovement, Order, Product, Store
 from app.models.user import User
-from app.routes.marketing import find_campaign_by_ref, record_campaign_visit
-from app.services.events import emit_event
-from app.services.storefront import (
+from app.campaigns.routes import find_campaign_by_ref, record_campaign_visit
+from app.events.handlers import emit_event
+from app.storefront.service import (
     create_order,
     create_product,
     create_store,

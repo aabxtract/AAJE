@@ -1,4 +1,4 @@
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 
 
 async def process_receipt(whatsapp_no: str, _media_url: str):

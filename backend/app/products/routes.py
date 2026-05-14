@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.services.product_service import create_product, list_products
+from app.products.service import create_product, list_products
 
 router = APIRouter(prefix="/stores/{store_id}/products", tags=["products"])
 

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.commerce import Store
 from app.models.user import User
-from app.services.whatsapp_client import send_text
+from app.whatsapp.service import send_text
 
 router = APIRouter(prefix="/api/whatsapp", tags=["whatsapp"])
 
