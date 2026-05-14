@@ -64,7 +64,7 @@ async def _storefront_context(db: AsyncSession, user: User) -> dict:
             "id": str(store.id),
             "name": store.store_name,
             "slug": store.slug,
-            "link": f"/s/{store.slug}",
+            "link": f"/{store.slug}",
             "has_squad_account": store.has_squad_account,
             "squad_virtual_account_number": store.squad_virtual_account_number,
         },

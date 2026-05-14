@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func
 
@@ -9,6 +9,10 @@ from app.database import Base
 
 class Store(Base):
     __tablename__ = "stores"
+    __table_args__ = (
+        CheckConstraint("slug = lower(slug)", name="ck_stores_slug_lowercase"),
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]*$'", name="ck_stores_slug_url_safe"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -39,6 +43,7 @@ class Product(Base):
     name = Column(String(150), nullable=False)
     description = Column(Text)
     category = Column(String(100))
+    type = Column(String(20), default="product")
     price = Column(Numeric(12, 2), nullable=False)
     image_url = Column(Text)
     stock_quantity = Column(Integer, default=0)
@@ -67,6 +72,7 @@ class Order(Base):
     squad_transaction_ref = Column(String(100))
     payment_method = Column(String(20), default="transfer")
     notes = Column(Text)
+    campaign_ref = Column(String(100))
     idempotency_key = Column(String(120), unique=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

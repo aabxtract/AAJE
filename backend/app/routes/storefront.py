@@ -6,8 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.commerce import InventoryMovement, Order, Product, Store
 from app.models.user import User
+from app.routes.marketing import find_campaign_by_ref, record_campaign_visit
 from app.services.events import emit_event
-from app.services.storefront import create_order, create_product, create_store, generate_store_blueprint
+from app.services.storefront import (
+    create_order,
+    create_product,
+    create_store,
+    generate_store_blueprint,
+    normalize_store_slug,
+)
 
 router = APIRouter(prefix="/api/storefront", tags=["storefront"])
 
@@ -44,6 +51,7 @@ class OrderCreateRequest(BaseModel):
     customer_phone: str | None = None
     items: list[dict]
     idempotency_key: str | None = None
+    campaign_ref: str | None = None
 
 
 class InventoryAdjustRequest(BaseModel):
@@ -68,12 +76,32 @@ async def post_store(payload: StoreCreateRequest, db: AsyncSession = Depends(get
 
 
 @router.get("/stores/{slug}")
-async def get_store(slug: str, db: AsyncSession = Depends(get_db)):
-    store = (await db.execute(select(Store).where(Store.slug == slug))).scalar_one_or_none()
+async def get_store(slug: str, ref: str | None = None, session_id: str | None = None, db: AsyncSession = Depends(get_db)):
+    store_slug = normalize_store_slug(slug)
+    store = (await db.execute(select(Store).where(Store.slug == store_slug))).scalar_one_or_none()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
+
+    attribution = None
+    if ref:
+        campaign = await find_campaign_by_ref(db, store.id, ref)
+        if campaign:
+            await record_campaign_visit(db, campaign, session_id)
+            await db.commit()
+            attribution = {
+                "campaign_id": str(campaign.id),
+                "campaign_name": campaign.campaign_name,
+                "source": campaign.source,
+                "ref_slug": campaign.ref_slug,
+            }
+
     products = (await db.execute(select(Product).where(Product.store_id == store.id, Product.is_active.is_(True)))).scalars().all()
-    return {**_store(store), "products": [_product(product) for product in products]}
+    return {
+        **_store(store),
+        "tenant_context": _tenant_context(store),
+        "products": [_product(product) for product in products],
+        "attribution": attribution,
+    }
 
 
 @router.get("/stores/by-user/{user_id}")
@@ -158,12 +186,23 @@ def _store(store: Store) -> dict:
         "user_id": str(store.user_id),
         "store_name": store.store_name,
         "slug": store.slug,
+        "store_slug": store.store_slug or store.slug,
         "tagline": store.tagline,
         "description": store.description,
         "theme_json": store.theme_json,
+        "theme": store.theme,
         "contact_whatsapp": store.contact_whatsapp,
         "has_squad_account": store.has_squad_account,
         "squad_virtual_account_number": store.squad_virtual_account_number,
+    }
+
+
+def _tenant_context(store: Store) -> dict:
+    return {
+        "store_id": str(store.id),
+        "user_id": str(store.user_id),
+        "slug": store.slug,
+        "routing": "path",
     }
 
 
@@ -192,4 +231,5 @@ def _order(order: Order) -> dict:
         "payment_status": order.payment_status,
         "order_status": order.order_status,
         "squad_payment_reference": order.squad_payment_reference,
+        "campaign_ref": order.campaign_ref,
     }

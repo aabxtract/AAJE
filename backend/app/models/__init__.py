@@ -16,6 +16,7 @@ from app.models.intelligence import (
     ScoreEvent,
 )
 from app.models.money import FailedTransfer, MonoTransaction, Supplier, VirtualAccount, Wallet
+from app.models.marketing import CampaignConversion, CampaignEvent, CampaignLink, CampaignVisit
 
 __all__ = [
     "User",
@@ -42,4 +43,8 @@ __all__ = [
     "Supplier",
     "MonoTransaction",
     "FailedTransfer",
+    "CampaignLink",
+    "CampaignVisit",
+    "CampaignEvent",
+    "CampaignConversion",
 ]

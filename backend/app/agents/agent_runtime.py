@@ -262,4 +262,33 @@ def _merge_tool_result_response(response_text: str, tool_results: list[tuple[str
         base = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
         link = f"{base}/flow?token={token}" if token else ""
         return f"Secure withdrawal flow created. Complete PIN confirmation here: {link}\n\nNo money leaves AAJE without your PIN."
+    if name == "get_marketing_analytics_tool" and isinstance(result, dict):
+        summary = result.get("summary", {})
+        sources = result.get("sources", [])
+        campaigns = result.get("campaigns", [])
+        if not sources and not campaigns:
+            return "You don't have any marketing campaigns set up yet. Create them from the dashboard to track your growth."
+        
+        lines = ["Growth summary"]
+        lines.append(f"Total Visits: {summary.get('total_visits', 0)}")
+        lines.append(f"Product Views: {summary.get('total_product_views', 0)}")
+        lines.append(f"Add to Cart: {summary.get('total_add_to_cart', 0)}")
+        lines.append(f"Total Orders: {summary.get('total_orders', 0)}")
+        lines.append(f"Total Revenue: NGN {summary.get('total_revenue', 0):,.2f}")
+        lines.append(f"Best Channel: {summary.get('best_channel', 'N/A')}")
+        if sources:
+            lines.append("\nPerformance by source:")
+            for item in sources[:3]:
+                lines.append(
+                    f"- {item['source']}: {item['orders']} order(s), "
+                    f"NGN {item['revenue']:,.2f}, {item['conversion_rate']}% conversion"
+                )
+            for insight in result.get("insights", [])[:2]:
+                lines.append(f"\n{insight}")
+            return "\n".join(lines)
+        lines.append("\n*Performance by Source:*")
+        for c in campaigns[:3]:
+            lines.append(f"- {c['source']}: {c['orders']} orders ({c['conversion_rate']}% conv)")
+            
+        return "\n".join(lines)
     return response_text

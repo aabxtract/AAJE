@@ -61,7 +61,7 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
             "slug": store.slug,
             "store_slug": store.store_slug,
             "store_name": store.store_name,
-            "link": f"/s/{store.slug}",
+            "link": f"/{store.slug}",
             "has_squad_account": store.has_squad_account,
             "squad_virtual_account_number": store.squad_virtual_account_number,
         },

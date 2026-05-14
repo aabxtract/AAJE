@@ -29,7 +29,7 @@ async def stores(user_id: str, db: AsyncSession = Depends(get_db)):
             "id": str(store.id),
             "name": store.store_name,
             "slug": store.slug,
-            "link": f"/s/{store.slug}",
+            "link": f"/{store.slug}",
             "description": store.description,
             "tagline": store.tagline,
             "theme_json": store.theme_json,

@@ -10,12 +10,18 @@ ALLOWED_TOPICS = {
     "store", "business", "inventory", "sales", "payment", "payments", "savings",
     "vault", "vaults", "score", "bizprint", "order", "orders", "withdraw",
     "withdrawal", "money", "account", "receipt", "report", "stock", "product",
+    "balance", "supplier", "sold", "pending", "link", "analytics",
+    "revenue", "income", "cash", "checkout", "customer", "delivered",
+    "campaign", "campaigns", "marketing", "growth", "source", "sources",
+    "referral", "referrals", "instagram", "whatsapp", "facebook", "tiktok",
 }
 
 
 def _guardrail_reject(message: str) -> bool:
     text = message.lower()
     if text.startswith("system_event:"):
+        return False
+    if "today" in text and any(topic in text for topic in {"sold", "sales", "orders", "payment", "revenue", "income"}):
         return False
     if any(topic in text for topic in ALLOWED_TOPICS):
         return False
@@ -61,6 +67,8 @@ async def agent_reason(event, context, available_tools):
         }
 
     fallback = _rule_based_reason(message, context)
+    if fallback.get("intent") not in {"storefront_help", "business_help"}:
+        return fallback
     client = _get_client()
     if not client:
         return fallback
@@ -105,6 +113,22 @@ def _rule_based_reason(message: str, context: dict) -> dict:
     text = message.lower()
     persona = context.get("persona", "normal_business_manager")
     store = context.get("store")
+    if any(term in text for term in {"campaign", "marketing", "growth", "source", "sources", "referral", "instagram", "facebook", "tiktok"}) or (
+        "where" in text and "customers" in text and "coming" in text
+    ) or (
+        "what brought" in text and ("sales" in text or "orders" in text)
+    ):
+        days = 1 if "today" in text else 7 if "week" in text else 30 if "month" in text else 7
+        return {
+            "persona": persona,
+            "intent": "marketing_attribution",
+            "tools_to_call": [{"name": "get_marketing_analytics_tool", "kwargs": {"days": days}}],
+            "response": "I am checking your growth attribution now.",
+            "requires_flow": False,
+            "flow_type": None,
+            "requires_pin": False,
+            "proactive_flags": [],
+        }
     if "withdraw" in text:
         amount = _amount_from_text(text)
         return {
@@ -117,6 +141,15 @@ def _rule_based_reason(message: str, context: dict) -> dict:
             "requires_pin": True,
             "proactive_flags": [],
         }
+    if "balance" in text or "vault" in text:
+        wallet = context.get("wallet") or {}
+        if wallet:
+            return _plain(persona, "wallet_balance", f"Your available wallet balance is NGN {wallet.get('available_balance', 0):,.2f}. Total earned: NGN {wallet.get('total_earned', 0):,.2f}.")
+        vaults = context.get("vaults") or []
+        if not vaults:
+            return _plain(persona, "vault_balances", "You do not have vault balances yet.")
+        lines = [f"{v['name']}: NGN {v['balance']:,.2f}" for v in vaults]
+        return _plain(persona, "vault_balances", "\n".join(lines))
     if persona == "storefront_extension":
         if "sold today" in text or "sales today" in text or "today" in text:
             return _answer("today_sales", "generate_store_insight", "I am checking today's store sales now.")
@@ -139,15 +172,6 @@ def _rule_based_reason(message: str, context: dict) -> dict:
         return _plain(persona, "score", f"Your current score is {score.get('score', 0)} with grade {score.get('grade') or 'not ready yet'}.")
     if "bizprint" in text:
         return _answer("bizprint", "get_bizprint", "I am pulling your BizPrint.")
-    if "balance" in text or "vault" in text:
-        wallet = context.get("wallet") or {}
-        if wallet:
-            return _plain(persona, "wallet_balance", f"Your available wallet balance is NGN {wallet.get('available_balance', 0):,.2f}. Total earned: NGN {wallet.get('total_earned', 0):,.2f}.")
-        vaults = context.get("vaults") or []
-        if not vaults:
-            return _plain(persona, "vault_balances", "You do not have vault balances yet.")
-        lines = [f"{v['name']}: NGN {v['balance']:,.2f}" for v in vaults]
-        return _plain(persona, "vault_balances", "\n".join(lines))
     return _plain(persona, "business_help", "You can ask about balances, vaults, payments, withdrawals, score, receipts, reports, and BizPrint.")
 
 

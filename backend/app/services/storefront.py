@@ -6,15 +6,31 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commerce import InventoryMovement, Order, OrderItem, Product, Store
+from app.models.marketing import CampaignLink
 from app.models.money import VirtualAccount, Wallet
 from app.models.user import User
 from app.services.events import emit_event
 from app.services.squad import create_virtual_account
 
 
-def slugify(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    return slug or f"store-{uuid.uuid4().hex[:8]}"
+def _ascii_lower(value: str) -> str:
+    return (value or "").encode("ascii", "ignore").decode("ascii").lower()
+
+
+def generate_store_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "", _ascii_lower(value))
+    return slug[:80] or f"store{uuid.uuid4().hex[:8]}"
+
+
+def normalize_store_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9-]+", "-", _ascii_lower(value)).strip("-")
+    slug = re.sub(r"-+", "-", slug)
+    return slug[:80] or f"store{uuid.uuid4().hex[:8]}"
+
+
+def ref_slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return slug[:80] or "campaign"
 
 
 async def generate_store_blueprint(description: str) -> dict:
@@ -25,20 +41,19 @@ async def generate_store_blueprint(description: str) -> dict:
         "tagline": "Simple, trusted, and ready for customers.",
         "description": description,
         "categories": ["Popular", "New Arrivals", "Services"],
-        "theme": {"primary": "#128c7e", "accent": "#f2b84b", "style": "clean"},
+        "theme": "clean_minimal",
         "starter_products": [
-            {"name": "Starter Item", "description": "Edit this item after setup.", "category": "Popular", "price": 5000, "stock_quantity": 10},
+            {"name": "Starter Item", "type": "product", "description": "Edit this item after setup.", "category": "Popular", "price": 5000, "stock_quantity": 10},
         ],
-        "squad_account_prompt": "Do you want AAJE to create a Squad business account for this store?",
     }
 
 
 async def create_store(db: AsyncSession, user: User, payload: dict) -> Store:
     store_name = payload["store_name"]
-    base_slug = payload.get("slug") or slugify(store_name)
+    base_slug = normalize_store_slug(payload["slug"]) if payload.get("slug") else generate_store_slug(store_name)
     slug = base_slug
     suffix = 2
-    while (await db.execute(select(Store).where(Store.slug == slug))).scalar_one_or_none():
+    while (await db.execute(select(Store).where((Store.slug == slug) | (Store.store_slug == slug)))).scalar_one_or_none():
         slug = f"{base_slug}-{suffix}"
         suffix += 1
 
@@ -79,7 +94,7 @@ async def create_storefront_from_description(db: AsyncSession, user: User, descr
         "store_name": blueprint["store_name"],
         "description": blueprint["store_description"] if "store_description" in blueprint else blueprint["description"],
         "tagline": blueprint.get("tagline"),
-        "theme": blueprint.get("theme") or {},
+        "theme": blueprint.get("theme") or "clean_minimal",
         "starter_products": blueprint.get("products") or blueprint.get("starter_products") or [],
         "has_squad_account": create_squad_account,
     })
@@ -149,6 +164,7 @@ async def create_product(db: AsyncSession, store: Store, payload: dict, emit: bo
         user_id=store.user_id,
         name=payload["name"],
         description=payload.get("description"),
+        type=payload.get("type", "product"),
         category=payload.get("category"),
         price=Decimal(str(payload.get("price") or 0)),
         image_url=payload.get("image_url"),
@@ -195,6 +211,18 @@ async def create_order(db: AsyncSession, store: Store, payload: dict) -> Order:
         total += line_total
         resolved_items.append((product, quantity, line_total))
 
+    campaign_ref = payload.get("campaign_ref")
+    if campaign_ref:
+        campaign = (await db.execute(
+            select(CampaignLink).where(
+                CampaignLink.store_id == store.id,
+                CampaignLink.ref_slug == ref_slugify(campaign_ref),
+            )
+        )).scalar_one_or_none()
+        if not campaign:
+            raise ValueError("Invalid campaign ref for this store")
+        campaign_ref = campaign.ref_slug
+
     reference = payload.get("payment_reference") or f"AAJE-{uuid.uuid4().hex[:16].upper()}"
     order = Order(
         store_id=store.id,
@@ -207,6 +235,7 @@ async def create_order(db: AsyncSession, store: Store, payload: dict) -> Order:
         squad_transaction_ref=reference,
         status="pending",
         notes=payload.get("notes"),
+        campaign_ref=campaign_ref,
         idempotency_key=payload.get("idempotency_key") or reference,
     )
     db.add(order)
@@ -230,5 +259,6 @@ async def create_order(db: AsyncSession, store: Store, payload: dict) -> Order:
         "order_id": str(order.id),
         "amount": float(total),
         "reference": reference,
+        "campaign_ref": campaign_ref,
     })
     return order

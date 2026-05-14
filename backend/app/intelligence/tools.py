@@ -48,7 +48,7 @@ async def get_top_products(db: AsyncSession, store_id: str):
 
 async def get_store_link(db: AsyncSession, store_id: str):
     store = await db.get(Store, store_id)
-    return f"/s/{store.slug}" if store else None
+    return f"/{store.slug}" if store else None
 
 
 async def create_product_from_chat(db: AsyncSession, user_id: str, product_data: dict):
@@ -138,6 +138,14 @@ async def send_whatsapp_notification(user_id: str, message: str):
     return {"queued": True, "user_id": user_id, "message": message}
 
 
+async def get_marketing_analytics_tool(db: AsyncSession, user_id: str, days: int = 7):
+    from app.routes.marketing import get_marketing_analytics
+    store = await get_store_by_user(db, user_id)
+    if not store:
+        return {"error": "Store not found"}
+    return await get_marketing_analytics(str(store.id), days=days, db=db)
+
+
 AVAILABLE_TOOL_NAMES = [
     "get_store_by_user",
     "get_store_orders",
@@ -158,5 +166,6 @@ AVAILABLE_TOOL_NAMES = [
     "parse_receipt",
     "create_flow_session",
     "send_whatsapp_notification",
+    "get_marketing_analytics_tool",
     "emit_event",
 ]

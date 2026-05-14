@@ -31,6 +31,7 @@ from app.routes.wallet import router as wallet_router
 from app.routes.webhook import router as whatsapp_router
 from app.routes.whatsapp_ecosystem import router as whatsapp_ecosystem_router
 from app.routes.whatsapp_flow_endpoint import router as whatsapp_flow_endpoint_router
+from app.routes.marketing import router as marketing_router
 
 # Import all models so Base.metadata knows about them
 import app.models  # noqa: F401
@@ -98,6 +99,7 @@ app.include_router(payments_router)
 app.include_router(whatsapp_ecosystem_router)
 app.include_router(intelligence_ecosystem_router)
 app.include_router(institutional_router)
+app.include_router(marketing_router)
 app.include_router(admin_router, prefix="/admin")
 
 

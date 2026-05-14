@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AAJE Admin - Growth Intelligence</title>
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .campaign-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .stat-box {
+      text-align: center;
+      padding: 1rem;
+      background: #11141c;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .stat-box .value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stat-box .label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #11141c;
+      color: var(--text);
+    }
+    .btn {
+      background: #128c7e;
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .link-copy {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .link-copy input {
+      flex: 1;
+      padding: 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: monospace;
+      background: #11141c;
+      color: var(--text);
+    }
+    .muted { color: var(--muted); }
+    .error { color: var(--danger); margin-top: 0.75rem; }
+    .source-pill {
+      background: rgba(72,187,120,0.15);
+      color: var(--success);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .section-title { margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="logo">AAJE Admin</div>
+    <a href="../index.html">Overview</a>
+    <a href="users.html">Traders</a>
+    <a href="transactions.html">Transactions</a>
+    <a href="marketing.html" class="active">Growth</a>
+    <a href="escalations.html">Escalations</a>
+    <a href="analytics.html">Analytics</a>
+  </nav>
+
+  <main class="content">
+    <header>
+      <h1>Growth Intelligence</h1>
+      <p class="muted">Track referrals, storefront behavior, orders, and revenue by source.</p>
+    </header>
+
+    <div class="campaign-card">
+      <h2>Generate Campaign Link</h2>
+      <div id="link-form">
+        <div class="form-group">
+          <label>Store ID</label>
+          <input type="text" id="store_id" placeholder="Paste the store ID to track" />
+        </div>
+        <div class="form-group">
+          <label>Campaign Name</label>
+          <input type="text" id="campaign_name" placeholder="e.g. Weekend drop" />
+        </div>
+        <div class="form-group">
+          <label>Source</label>
+          <select id="source">
+            <option value="Instagram">Instagram</option>
+            <option value="WhatsApp Status">WhatsApp Status</option>
+            <option value="Facebook">Facebook</option>
+            <option value="TikTok">TikTok</option>
+            <option value="Custom">Custom</option>
+          </select>
+        </div>
+        <div class="form-group" id="custom-source-group" style="display:none;">
+          <label>Custom Source</label>
+          <input type="text" id="custom_source" placeholder="e.g. influencer_ada" />
+        </div>
+        <button class="btn" onclick="generateLink()">Generate Tracked Link</button>
+        <div id="form-error" class="error"></div>
+      </div>
+      <div id="link-result" style="display:none;">
+        <p>Your tracked link is ready:</p>
+        <div class="link-copy">
+          <input type="text" id="generated_url" readonly />
+          <button class="btn" onclick="copyLink()">Copy</button>
+        </div>
+        <button class="btn" style="background:#64748b; margin-top:1rem;" onclick="resetForm()">Create Another</button>
+      </div>
+    </div>
+
+    <section id="analytics-section">
+      <h2>Campaign Performance</h2>
+      <p id="empty-state" class="muted"></p>
+      <div id="summary-grid" class="stats-grid"></div>
+
+      <h2 class="section-title">Traffic by Source</h2>
+      <div id="source-list"></div>
+
+      <h2 class="section-title">Campaigns</h2>
+      <div id="campaign-list"></div>
+    </section>
+  </main>
+
+  <script>
+    const API_BASE = 'http://localhost:8000';
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+
+    function getStoreId() {
+      const input = document.getElementById('store_id');
+      const value = input.value.trim() || localStorage.getItem('active_store_id') || '';
+      if (value) {
+        localStorage.setItem('active_store_id', value);
+      }
+      return value;
+    }
+
+    document.getElementById('store_id').value = localStorage.getItem('active_store_id') || '';
+    document.getElementById('source').addEventListener('change', event => {
+      document.getElementById('custom-source-group').style.display = event.target.value === 'Custom' ? 'block' : 'none';
+    });
+
+    async function generateLink() {
+      const storeId = getStoreId();
+      const name = document.getElementById('campaign_name').value.trim();
+      const source = document.getElementById('source').value;
+      const customSource = document.getElementById('custom_source').value.trim();
+      const error = document.getElementById('form-error');
+      error.textContent = '';
+
+      if (!storeId || !name || (source === 'Custom' && !customSource)) {
+        error.textContent = 'Store ID, campaign name, and source are required.';
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/api/marketing/campaigns`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            store_id: storeId,
+            campaign_name: name,
+            source,
+            custom_source: source === 'Custom' ? customSource : null
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Failed to generate link');
+        }
+        document.getElementById('generated_url').value = data.url;
+        document.getElementById('link-form').style.display = 'none';
+        document.getElementById('link-result').style.display = 'block';
+        loadAnalytics();
+      } catch (e) {
+        error.textContent = e.message || 'Failed to generate link';
+      }
+    }
+
+    function copyLink() {
+      const el = document.getElementById('generated_url');
+      el.select();
+      document.execCommand('copy');
+      alert('Link copied!');
+    }
+
+    function resetForm() {
+      document.getElementById('link-form').style.display = 'block';
+      document.getElementById('link-result').style.display = 'none';
+      document.getElementById('campaign_name').value = '';
+      document.getElementById('custom_source').value = '';
+    }
+
+    async function loadAnalytics() {
+      const storeId = getStoreId();
+      const emptyState = document.getElementById('empty-state');
+      if (!storeId) {
+        emptyState.textContent = 'Add a store ID to load attribution analytics.';
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/api/marketing/analytics/${storeId}?days=30`);
+        const data = await res.json();
+        emptyState.textContent = data.campaigns.length ? '' : 'No campaign links yet.';
+
+        document.getElementById('summary-grid').innerHTML = `
+          <div class="stat-box"><div class="value">${data.summary.total_visits}</div><div class="label">Visits</div></div>
+          <div class="stat-box"><div class="value">${data.summary.total_product_views}</div><div class="label">Product Views</div></div>
+          <div class="stat-box"><div class="value">${data.summary.total_add_to_cart}</div><div class="label">Add to Cart</div></div>
+          <div class="stat-box"><div class="value">${data.summary.total_orders}</div><div class="label">Orders</div></div>
+          <div class="stat-box"><div class="value">NGN ${Number(data.summary.total_revenue).toLocaleString()}</div><div class="label">Revenue</div></div>
+          <div class="stat-box"><div class="value">${escapeHtml(data.summary.best_channel)}</div><div class="label">Best Channel</div></div>
+        `;
+
+        document.getElementById('source-list').innerHTML = data.sources.map(sourceItem => `
+          <div class="campaign-card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h3>${escapeHtml(sourceItem.source)}</h3>
+              <span class="source-pill">${sourceItem.conversion_rate}% conv</span>
+            </div>
+            <div class="stats-grid">
+              <div class="stat-box"><div class="value">${sourceItem.visits}</div><div class="label">Visits</div></div>
+              <div class="stat-box"><div class="value">${sourceItem.orders}</div><div class="label">Orders</div></div>
+              <div class="stat-box"><div class="value">NGN ${Number(sourceItem.revenue).toLocaleString()}</div><div class="label">Revenue</div></div>
+            </div>
+          </div>
+        `).join('');
+
+        document.getElementById('campaign-list').innerHTML = data.campaigns.map(campaign => `
+          <div class="campaign-card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h3>${escapeHtml(campaign.campaign_name)}</h3>
+              <span class="source-pill">${escapeHtml(campaign.source)}</span>
+            </div>
+            <div class="stats-grid">
+              <div class="stat-box"><div class="value">${campaign.visits}</div><div class="label">Visits</div></div>
+              <div class="stat-box"><div class="value">${campaign.product_views}</div><div class="label">Product Views</div></div>
+              <div class="stat-box"><div class="value">${campaign.add_to_cart}</div><div class="label">Add to Cart</div></div>
+              <div class="stat-box"><div class="value">${campaign.orders}</div><div class="label">Orders</div></div>
+              <div class="stat-box"><div class="value">NGN ${Number(campaign.revenue).toLocaleString()}</div><div class="label">Revenue</div></div>
+              <div class="stat-box"><div class="value">${campaign.conversion_rate}%</div><div class="label">Conv. Rate</div></div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        emptyState.textContent = 'Could not load attribution analytics.';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadAnalytics);
+  </script>
+</body>
+</html>

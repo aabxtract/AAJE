@@ -131,6 +131,24 @@ async def _record_payment_side_effects(db: AsyncSession, event: Event, payload: 
             await _reduce_inventory_for_order(db, order)
             await _notify_store_sale(db, order, amount, reference)
 
+            if order.campaign_ref:
+                from app.models.marketing import CampaignLink, CampaignConversion
+                campaign = (await db.execute(
+                    select(CampaignLink).where(
+                        CampaignLink.store_id == order.store_id,
+                        CampaignLink.ref_slug == order.campaign_ref,
+                    )
+                )).scalar_one_or_none()
+                existing_conversion = (await db.execute(
+                    select(CampaignConversion).where(CampaignConversion.order_id == order.id)
+                )).scalar_one_or_none()
+                if campaign and not existing_conversion:
+                    db.add(CampaignConversion(
+                        campaign_id=campaign.id,
+                        order_id=order.id,
+                        revenue=order.total_amount or amount
+                    ))
+
     await _credit_wallet(db, event.user_id, amount)
     await _refresh_intelligence(db, event.user_id, event.store_id)
 

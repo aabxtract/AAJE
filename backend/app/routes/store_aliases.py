@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.commerce import Order, Product, Store
-from app.services.storefront import create_order, create_product
+from app.routes.marketing import find_campaign_by_ref, record_campaign_visit
+from app.services.storefront import create_order, create_product, normalize_store_slug
 
 router = APIRouter(tags=["store-compat"])
 
@@ -16,6 +17,7 @@ class StoreOrderRequest(BaseModel):
     customer_whatsapp: str | None = None
     items: list[dict]
     notes: str | None = None
+    campaign_ref: str | None = None
 
 
 class ProductRequest(BaseModel):
@@ -30,20 +32,40 @@ class ProductRequest(BaseModel):
 
 
 @router.get("/store/{slug}")
-async def public_store(slug: str, db: AsyncSession = Depends(get_db)):
-    store = (await db.execute(select(Store).where((Store.slug == slug) | (Store.store_slug == slug)))).scalar_one_or_none()
+async def public_store(slug: str, ref: str | None = None, session_id: str | None = None, db: AsyncSession = Depends(get_db)):
+    store_slug = normalize_store_slug(slug)
+    store = (await db.execute(select(Store).where((Store.slug == store_slug) | (Store.store_slug == store_slug)))).scalar_one_or_none()
     if not store or not store.is_active:
         raise HTTPException(status_code=404, detail="Store not found")
+    attribution = None
+    if ref:
+        campaign = await find_campaign_by_ref(db, store.id, ref)
+        if campaign:
+            await record_campaign_visit(db, campaign, session_id)
+            await db.commit()
+            attribution = {
+                "campaign_id": str(campaign.id),
+                "campaign_name": campaign.campaign_name,
+                "source": campaign.source,
+                "ref_slug": campaign.ref_slug,
+            }
     products = (await db.execute(select(Product).where(Product.store_id == store.id, Product.is_available.is_(True)))).scalars().all()
     return {
         "id": str(store.id),
         "user_id": str(store.user_id),
+        "tenant_context": {
+            "store_id": str(store.id),
+            "user_id": str(store.user_id),
+            "slug": store.slug,
+            "routing": "path",
+        },
         "store_name": store.store_name,
         "store_slug": store.store_slug or store.slug,
         "store_description": store.store_description or store.description,
         "whatsapp_number": store.whatsapp_number or store.contact_whatsapp,
         "theme": store.theme,
         "products": [_product(product) for product in products],
+        "attribution": attribution,
     }
 
 
@@ -81,7 +103,8 @@ async def add_product(payload: ProductRequest, db: AsyncSession = Depends(get_db
 
 @router.post("/orders")
 async def create_public_order(payload: StoreOrderRequest, db: AsyncSession = Depends(get_db)):
-    store = (await db.execute(select(Store).where((Store.slug == payload.store_slug) | (Store.store_slug == payload.store_slug)))).scalar_one_or_none()
+    store_slug = normalize_store_slug(payload.store_slug)
+    store = (await db.execute(select(Store).where((Store.slug == store_slug) | (Store.store_slug == store_slug)))).scalar_one_or_none()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
     order = await create_order(db, store, {
@@ -90,6 +113,7 @@ async def create_public_order(payload: StoreOrderRequest, db: AsyncSession = Dep
         "customer_whatsapp": payload.customer_whatsapp,
         "items": payload.items,
         "notes": payload.notes,
+        "campaign_ref": payload.campaign_ref,
     })
     return {
         "id": str(order.id),

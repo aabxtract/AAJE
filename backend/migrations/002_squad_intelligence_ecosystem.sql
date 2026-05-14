@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS stores (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
     store_name VARCHAR(150) NOT NULL,
-    slug VARCHAR(180) UNIQUE NOT NULL,
+    slug VARCHAR(180) UNIQUE NOT NULL CHECK (slug = lower(slug) AND slug ~ '^[a-z0-9][a-z0-9-]*$'),
     store_slug VARCHAR(180) UNIQUE,
     description TEXT,
     store_description TEXT,
@@ -31,6 +31,21 @@ ALTER TABLE stores ADD COLUMN IF NOT EXISTS store_description TEXT;
 ALTER TABLE stores ADD COLUMN IF NOT EXISTS theme VARCHAR(50) DEFAULT 'default';
 ALTER TABLE stores ADD COLUMN IF NOT EXISTS whatsapp_number VARCHAR(20);
 ALTER TABLE stores ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'ck_stores_slug_lowercase'
+    ) THEN
+        ALTER TABLE stores
+            ADD CONSTRAINT ck_stores_slug_lowercase CHECK (slug = lower(slug)) NOT VALID;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'ck_stores_slug_url_safe'
+    ) THEN
+        ALTER TABLE stores
+            ADD CONSTRAINT ck_stores_slug_url_safe CHECK (slug ~ '^[a-z0-9][a-z0-9-]*$') NOT VALID;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS products (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -52,6 +67,7 @@ CREATE TABLE IF NOT EXISTS products (
 ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_available BOOLEAN DEFAULT TRUE;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'web';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS type VARCHAR(20) DEFAULT 'product';
 
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -106,10 +122,14 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
 
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS store_id UUID REFERENCES stores(id);
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS order_id UUID REFERENCES orders(id);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS stream_id UUID REFERENCES income_streams(id);
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS external_reference VARCHAR(120);
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS provider VARCHAR(50);
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS status VARCHAR(30) DEFAULT 'completed';
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS raw_payload TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS narration TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS squad_transaction_ref VARCHAR(100);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_ref_unique ON transactions(squad_transaction_ref);
 
 ALTER TABLE vaults ADD COLUMN IF NOT EXISTS store_id UUID REFERENCES stores(id);
 ALTER TABLE vaults ADD COLUMN IF NOT EXISTS name VARCHAR(120) DEFAULT 'Main Vault';

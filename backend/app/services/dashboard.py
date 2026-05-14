@@ -31,7 +31,7 @@ async def get_owner_overview(db: AsyncSession, user_id: str) -> dict:
                 "id": str(store.id),
                 "name": store.store_name,
                 "slug": store.slug,
-                "link": f"/s/{store.slug}",
+                "link": f"/{store.slug}",
                 "has_squad_account": store.has_squad_account,
             }
             for store in stores
