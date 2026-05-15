@@ -14,7 +14,6 @@ from app.config import settings
 from app.database import get_db
 from app.models.commerce import Store
 from app.models.user import User
-from app.storefront.service import create_storefront_from_description
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -23,14 +22,6 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     full_name: str
-    business_description: str
-    phone: str | None = None
-    create_squad_account: bool = True
-
-
-class GoogleSignupRequest(BaseModel):
-    email: str
-    full_name: str | None = None
     phone: str | None = None
 
 
@@ -45,9 +36,9 @@ class ConnectWhatsappRequest(BaseModel):
 
 @router.post("/signup")
 async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
-    # For email-based signup, require phone collection per spec
+    """Create user account only. Store is created later during onboarding confirm."""
     if not payload.phone:
-        raise HTTPException(status_code=400, detail="Phone number required for email signups")
+        raise HTTPException(status_code=400, detail="Phone number required")
 
     whatsapp_no = _normalize_whatsapp_number(payload.phone)
     existing = (await db.execute(select(User).where(User.email == payload.email.lower()))).scalar_one_or_none()
@@ -64,49 +55,15 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
         phone=payload.phone,
         whatsapp_no=whatsapp_no,
         whatsapp_connected=True,
-        business_description=payload.business_description,
-        onboarding_complete=True,
+        onboarding_complete=False,
         persona_mode="storefront_operations_free",
     )
     db.add(user)
     await db.flush()
-    store = await create_storefront_from_description(db, user, payload.business_description, payload.create_squad_account)
-    store.contact_whatsapp = whatsapp_no
-    store.whatsapp_number = whatsapp_no
     return {
         "token": _create_token(str(user.id)),
         "user": _user_payload(user),
-        "store": {
-            "id": str(store.id),
-            "slug": store.slug,
-            "store_slug": store.store_slug,
-            "store_name": store.store_name,
-            "link": f"/{store.slug}",
-            "has_squad_account": store.has_squad_account,
-            "squad_virtual_account_number": store.squad_virtual_account_number,
-        },
     }
-
-
-@router.post("/google-signin")
-async def google_signin(payload: GoogleSignupRequest, db: AsyncSession = Depends(get_db)):
-    # Placeholder/mock google auth: accept email and optionally create user
-    existing = (await db.execute(select(User).where(User.email == payload.email.lower()))).scalar_one_or_none()
-    if existing:
-        return {"token": _create_token(str(existing.id)), "user": _user_payload(existing)}
-
-    user = User(
-        email=payload.email.lower(),
-        full_name=payload.full_name or "",
-        phone=payload.phone,
-        onboarding_complete=True,
-        persona_mode="storefront_extension",
-        plan="free",
-    )
-    db.add(user)
-    await db.flush()
-    # Do not create storefront automatically for google mock; let client call AI create flow
-    return {"token": _create_token(str(user.id)), "user": _user_payload(user)}
 
 
 @router.post("/login")
@@ -135,6 +92,35 @@ async def connect_whatsapp(payload: ConnectWhatsappRequest, authorization: str |
         store.contact_whatsapp = whatsapp_no
         store.whatsapp_number = whatsapp_no
     return {"status": "connected", "user": _user_payload(user)}
+
+
+class UpdateUserRequest(BaseModel):
+    full_name: str | None = None
+    phone: str | None = None
+    whatsapp_no: str | None = None
+    verified_bank_account: str | None = None
+    verified_bank_code: str | None = None
+    verified_bank_name: str | None = None
+
+
+@router.post("/update-me")
+async def update_me(payload: UpdateUserRequest, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    user = await _current_user(db, authorization)
+    if payload.full_name is not None:
+        user.full_name = payload.full_name
+    if payload.phone is not None:
+        user.phone = payload.phone
+    if payload.whatsapp_no is not None:
+        user.whatsapp_no = _normalize_whatsapp_number(payload.whatsapp_no)
+    if payload.verified_bank_account is not None:
+        user.verified_bank_account = payload.verified_bank_account
+    if payload.verified_bank_code is not None:
+        user.verified_bank_code = payload.verified_bank_code
+    if payload.verified_bank_name is not None:
+        user.verified_bank_name = payload.verified_bank_name
+    
+    await db.flush()
+    return {"status": "updated", "user": _user_payload(user)}
 
 
 async def _current_user(db: AsyncSession, authorization: str | None) -> User:
@@ -219,4 +205,5 @@ def _user_payload(user: User) -> dict:
         "preferred_language": user.preferred_language,
         "business_description": user.business_description,
         "persona_mode": user.persona_mode,
+        "onboarding_complete": user.onboarding_complete,
     }

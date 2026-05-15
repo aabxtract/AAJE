@@ -1,290 +1,325 @@
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
-  BarChart3,
-  CheckCircle2,
+  Bot,
+  Check,
   CreditCard,
-  ExternalLink,
+  FileCheck2,
   MessageCircle,
-  PackageCheck,
-  Sparkles,
-  Store,
+  Send,
   TrendingUp,
 } from 'lucide-react'
 
-const heroImage =
-  'https://images.unsplash.com/photo-1556740758-90de374c12ad?auto=format&fit=crop&w=1800&q=85'
+const navItems = ['Product', 'Solutions', 'Pricing', 'Resources']
 
-const storeImage =
-  'https://images.unsplash.com/photo-1607083206968-13611e3d76db?auto=format&fit=crop&w=1200&q=85'
-
-const productImage =
-  'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=85'
-
-const campaignImage =
-  'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=85'
-
-const flowSteps = [
-  { label: 'Describe your business', icon: Sparkles },
-  { label: 'AI drafts your store', icon: Store },
-  { label: 'Add products or services', icon: PackageCheck },
-  { label: 'Customer checks out', icon: CreditCard },
-  { label: 'WhatsApp updates you', icon: MessageCircle },
-]
-
-const metrics = [
-  { value: '1', label: 'free storefront to launch' },
-  { value: '4', label: 'items per guest checkout' },
-  { value: '8PM', label: 'daily WhatsApp summary' },
-]
-
-const operations = [
+const featureCards = [
   {
-    title: 'AI storefront generation',
-    body: 'Turn a short business description into store copy, categories, layout, and starter products.',
-    icon: Sparkles,
-  },
-  {
-    title: 'Squad checkout loop',
-    body: 'Create pending orders, initiate sandbox payments, mark paid orders, and reduce inventory after success.',
-    icon: CreditCard,
-  },
-  {
-    title: 'WhatsApp operations',
-    body: 'Send order, payment, low-stock, and daily sales notifications from the same central backend.',
+    title: 'WhatsApp native',
+    body: 'Manage orders, answer queries, and send updates directly through WhatsApp.',
     icon: MessageCircle,
   },
   {
-    title: 'Campaign attribution',
-    body: 'Track Instagram, WhatsApp Status, Facebook, and TikTok links through visits and conversions.',
+    title: 'Squad-powered payments',
+    body: 'Fast checkout with integrated Squad payments and instant transaction records.',
+    icon: CreditCard,
+  },
+  {
+    title: 'Growth intelligence',
+    body: 'AI turns sales activity into insights you can act on immediately.',
     icon: TrendingUp,
   },
 ]
 
+const advancedCards = [
+  {
+    title: 'Advanced AI-driven analytics',
+    body: 'Spot revenue patterns, campaign lift, product demand, and customer behavior without building spreadsheets.',
+    icon: TrendingUp,
+  },
+  {
+    title: 'Virtual accounts for businesses',
+    body: 'Give every storefront cleaner payment collection, reconciliation, and business-ready money movement.',
+    icon: CreditCard,
+  },
+  {
+    title: 'Advanced AI features',
+    body: 'Use AI to optimize product copy, recommend next actions, summarize operations, and surface growth opportunities.',
+    icon: Bot,
+  },
+]
+
+function CertificateMockup() {
+  return (
+    <div className="rounded-[8px] border border-[#dcd4eb] bg-white p-7 shadow-[0_18px_45px_rgba(35,18,82,0.1)]">
+      <div className="flex items-center justify-between border-b border-[#eee8f7] pb-5">
+        <div>
+          <p className="text-[0.68rem] font-bold uppercase text-[#030328]">Certificate of Authenticity</p>
+          <p className="mt-1 text-[0.68rem] text-[#77738c]">AAJE-BIZ-093481</p>
+        </div>
+        <FileCheck2 className="h-5 w-5 text-[#077ef6]" />
+      </div>
+      <div className="mt-6 grid gap-4 text-xs text-[#030328]">
+        <div className="flex justify-between">
+          <span className="text-[#77738c]">Item</span>
+          <span>Artisan Leather Tote</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[#77738c]">Date</span>
+          <span>Oct 24, 2026</span>
+        </div>
+      </div>
+      <div className="mx-auto mt-8 grid h-16 w-16 place-items-center rounded-[8px] border border-[#cfc8de] bg-[#f6f2fb]">
+        <div className="grid h-10 w-10 grid-cols-3 gap-0.5">
+          {Array.from({ length: 9 }).map((_, index) => (
+            <span key={index} className={index % 2 === 0 ? 'bg-[#030328]' : 'bg-[#cfc8de]'} />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Landing() {
   return (
-    <main className="min-h-screen bg-[#f7f8f4] text-[#111827]">
-      <header className="fixed left-0 right-0 top-0 z-30 border-b border-white/20 bg-[#0f172a]/70 backdrop-blur-xl">
-        <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link to="/" className="flex items-center gap-2 text-white" aria-label="AAJE home">
-            <span className="grid h-8 w-8 place-items-center rounded-md bg-white text-sm font-black text-[#0f172a]">
-              A
-            </span>
-            <span className="text-sm font-semibold tracking-wide">AAJE</span>
+    <main className="min-h-screen bg-[#fbf8ff] text-[#030328]">
+      <section id="product" className="flex min-h-screen flex-col px-5 pb-16 pt-7 lg:px-8">
+        <div className="mx-auto grid max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-6">
+          <Link to="/" className="justify-self-start text-sm font-black text-[#077ef6]" aria-label="AAJE home">
+            AAJE
           </Link>
 
-          <div className="hidden items-center gap-7 text-sm text-white/78 md:flex">
-            <a href="#platform" className="transition hover:text-white">Platform</a>
-            <a href="#flow" className="transition hover:text-white">Flow</a>
-            <a href="#pricing" className="transition hover:text-white">Access</a>
+          <div className="hidden items-center justify-center gap-8 text-xs font-medium text-[#4f4b63] md:flex">
+            {navItems.map((item) => (
+              <a key={item} href={`#${item.toLowerCase()}`} className="transition hover:text-[#077ef6]">
+                {item}
+              </a>
+            ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-self-end gap-3">
+            <Link to="/login" className="hidden text-xs font-semibold text-[#4f4b63] transition hover:text-[#077ef6] sm:inline-flex">
+              Log in
+            </Link>
             <Link
               to="/signup"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-white px-4 text-sm font-semibold text-[#0f172a] transition hover:bg-[#dff7e8]"
+              className="inline-flex h-8 items-center rounded-[7px] bg-[#077ef6] px-4 text-xs font-bold text-white transition hover:bg-[#0269d2]"
             >
               Get started
-              <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
-        </nav>
-      </header>
+        </div>
 
-      <section className="relative flex min-h-[92vh] items-end overflow-hidden">
-        <img
-          src={heroImage}
-          alt="Merchant using a phone to run online sales"
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 bg-[#07111f]/70" />
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#f7f8f4] to-transparent" />
+        <div className="mx-auto mt-[12vh] max-w-5xl text-center">
+          <h1 className="mx-auto max-w-4xl text-5xl font-[300] leading-[1.04] tracking-normal text-[#05051f]">
+            Create your AI-powered storefront and run your business through WhatsApp.
+          </h1>
+          <p className="mx-auto mt-6 max-w-2xl text-sm leading-6 text-[#625d75]">
+            Operational excellence built for modern commerce. Launch seamlessly, accept payments, and let AI handle the heavy lifting while you connect directly with customers.
+          </p>
 
-        <div className="relative z-10 mx-auto grid w-full max-w-7xl gap-8 px-4 pb-16 pt-28 sm:px-6 lg:grid-cols-[1fr_420px] lg:px-8">
-          <div className="max-w-4xl text-white">
-            <p className="inline-flex items-center gap-2 rounded-md border border-white/25 bg-white/10 px-3 py-1 text-xs font-semibold uppercase text-[#dff7e8]">
-              <Sparkles className="h-3.5 w-3.5" />
-              AI-native storefronts for WhatsApp sellers
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Link
+              to="/signup"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[8px] bg-[#077ef6] px-5 text-sm font-bold text-white shadow-[0_16px_32px_rgba(7,126,246,0.25)] transition hover:bg-[#0269d2]"
+            >
+              Start building free
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <a
+              href="#solutions"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[8px] border border-[#dcd6ea] bg-white/70 px-5 text-sm font-semibold text-[#4f4b63] transition hover:border-[#077ef6] hover:text-[#077ef6]"
+            >
+              <Send className="h-4 w-4" />
+              Talk to sales
+            </a>
+          </div>
+        </div>
+
+        <div className="flex-1" aria-hidden="true" />
+      </section>
+
+      <section id="solutions" className="px-5 py-24 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div>
+            <p className="text-[0.68rem] font-black uppercase text-[#077ef6]">Generative AI</p>
+            <h2 className="mt-3 max-w-lg text-4xl font-black leading-tight text-[#05051f]">
+              Instantly generate a premium storefront.
+            </h2>
+            <p className="mt-5 max-w-xl text-sm leading-7 text-[#625d75]">
+              Describe your business, and our AI engine crafts a high-conversion storefront with polished copy, product sections, checkout flows, and a brand system that feels ready from day one.
             </p>
-            <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[1.02] sm:text-6xl lg:text-7xl">
-              Launch a store, collect payments, and run the business from WhatsApp.
-            </h1>
-            <p className="mt-6 max-w-2xl text-base leading-7 text-white/78 sm:text-lg">
-              AAJE creates a storefront from your business description, handles products, checkout, Squad sandbox payments, orders, inventory, BizPrint, and notifications through one backend.
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link
-                to="/signup"
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#dff7e8] px-5 text-sm font-bold text-[#0f172a] transition hover:bg-white"
-              >
-                Build my store
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <a
-                href="#flow"
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-white/25 px-5 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                See the flow
-                <ExternalLink className="h-4 w-4" />
-              </a>
+            <div className="mt-8 space-y-4">
+              {['Auto-generated brand identity and copy.', 'Mobile-first, lightning-fast performance.', 'Inventory, payment, and notification logic included.'].map((item) => (
+                <div key={item} className="flex items-center gap-3 text-sm font-medium text-[#4f4b63]">
+                  <span className="grid h-5 w-5 place-items-center rounded-full bg-[#ece6ff] text-[#077ef6]">
+                    <Check className="h-3.5 w-3.5" />
+                  </span>
+                  {item}
+                </div>
+              ))}
             </div>
           </div>
+        </div>
+      </section>
 
-          <div className="hidden self-end rounded-md border border-white/18 bg-white/12 p-4 shadow-2xl backdrop-blur-xl lg:block">
-            <div className="rounded-md bg-[#f8fafc] p-4 text-[#111827]">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase text-slate-500">Today</p>
-                  <p className="text-xl font-bold">NGN 128,400</p>
+      <section className="px-5 pb-24 lg:px-8">
+        <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
+          {/* Placeholder removed */}
+
+          <div className="lg:pl-6">
+            <p className="text-[0.68rem] font-black uppercase text-[#077ef6]">Conversational business operation</p>
+            <h2 className="mt-3 max-w-xl text-4xl font-black leading-tight text-[#05051f]">
+              Manage your storefront from the WhatsApp conversations you already use.
+            </h2>
+            <p className="mt-5 max-w-xl text-sm leading-7 text-[#625d75]">
+              AAJE turns WhatsApp into a business command center, so you can manage orders, confirm payments, update products, follow up with customers, and operate your storefront without switching tools.
+            </p>
+            <div className="mt-8 grid gap-3 sm:grid-cols-2">
+              {[
+                'Reply to buyers and manage orders in one place.',
+                'Receive payment, inventory, and delivery updates instantly.',
+                'Run daily storefront tasks through simple chat actions.',
+                'Keep customer conversations connected to every sale.',
+              ].map((item) => (
+                <div key={item} className="rounded-[8px] border border-[#e3ddec] bg-white/70 p-4 text-sm font-medium leading-6 text-[#4f4b63]">
+                  {item}
                 </div>
-                <span className="rounded-md bg-[#0f172a] px-3 py-1 text-xs font-semibold text-white">Paid</span>
-              </div>
-              <div className="mt-4 space-y-3">
-                {['WhatsApp order alert sent', 'Inventory reduced after payment', 'BizPrint score refreshed'].map((item) => (
-                  <div key={item} className="flex items-center gap-3 rounded-md border border-slate-200 bg-white p-3">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    <span className="text-sm font-medium">{item}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-5 pb-24 lg:px-8">
+        <div className="mx-auto max-w-7xl rounded-[8px] border border-[#030328] bg-[#030328] p-8 text-white sm:p-12">
+          <div className="grid gap-12 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
+            <div>
+              <p className="text-[0.68rem] font-black uppercase text-[#93c5fd]">Intelligent finance layer</p>
+              <h2 className="mt-4 max-w-xl text-4xl font-black leading-tight">
+                Analytics, accounts, and AI tools for businesses ready to grow.
+              </h2>
+              <p className="mt-5 max-w-xl text-sm leading-7 text-white/65">
+                Move beyond a basic storefront with smarter financial infrastructure, stronger operational visibility, and AI features that help merchants make better decisions every day.
+              </p>
+              <div className="mt-8 space-y-4">
+                {advancedCards.map((card) => (
+                  <div key={card.title} className="flex gap-3 text-sm leading-6 text-white/74">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#077ef6]" />
+                    <p>
+                      <span className="font-bold text-white">{card.title}:</span> {card.body}
+                    </p>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* Placeholder removed */}
           </div>
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-3 px-4 pb-16 sm:px-6 md:grid-cols-3 lg:px-8">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="rounded-md border border-[#d9dfd4] bg-white p-6">
-            <p className="text-4xl font-semibold text-[#0f172a]">{metric.value}</p>
-            <p className="mt-2 text-sm text-slate-600">{metric.label}</p>
-          </div>
-        ))}
-      </section>
-
-      <section id="platform" className="border-y border-[#d9dfd4] bg-white">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
-          <div>
-            <p className="text-xs font-bold uppercase text-emerald-700">One central backend</p>
-            <h2 className="mt-4 max-w-xl text-4xl font-semibold leading-tight text-[#0f172a]">
-              Storefront, WhatsApp, payments, inventory, and intelligence in one operating loop.
-            </h2>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            {operations.map((item) => {
-              const Icon = item.icon
+      <section id="pricing" className="px-5 py-20 lg:px-8">
+        <div className="mx-auto grid max-w-7xl items-center gap-12 rounded-[8px] border border-[#e3ddec] bg-white p-8 sm:p-12 lg:grid-cols-[1fr_0.9fr]">
+          <div className="relative min-h-[560px]">
+            {featureCards.map((feature, index) => {
+              const Icon = feature.icon
+              const positions = [
+                { top: 0, left: '3%', rotate: '-4deg', zIndex: 3 },
+                { top: 155, left: '15%', rotate: '3deg', zIndex: 2 },
+                { top: 310, left: '7%', rotate: '-2deg', zIndex: 1 },
+              ]
               return (
-                <article key={item.title} className="rounded-md border border-slate-200 bg-[#fbfcf8] p-5">
-                  <Icon className="h-5 w-5 text-[#0f766e]" />
-                  <h3 className="mt-5 text-lg font-semibold text-[#0f172a]">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{item.body}</p>
+                <article
+                  key={feature.title}
+                  className="absolute w-[86%] rounded-[8px] border border-[#dcd4eb] bg-[#fcf9ff] p-6 shadow-[0_22px_55px_rgba(35,18,82,0.08)] transition hover:z-10 hover:-translate-y-1"
+                  style={{
+                    top: positions[index].top,
+                    left: positions[index].left,
+                    transform: `rotate(${positions[index].rotate})`,
+                    zIndex: positions[index].zIndex,
+                  }}
+                >
+                  <span className="grid h-10 w-10 place-items-center rounded-[8px] bg-[#f0eaff] text-[#077ef6]">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <h3 className="mt-7 text-lg font-black text-[#05051f]">{feature.title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-[#625d75]">{feature.body}</p>
                 </article>
               )
             })}
           </div>
-        </div>
-      </section>
 
-      <section id="flow" className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-        <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="overflow-hidden rounded-md border border-[#d9dfd4] bg-white">
-            <img src={storeImage} alt="Online product storefront preview" className="h-72 w-full object-cover" />
-            <div className="grid gap-3 p-4 md:grid-cols-2">
-              <div className="rounded-md bg-[#eef8f1] p-4">
-                <p className="text-xs font-bold uppercase text-emerald-800">Store link</p>
-                <p className="mt-2 font-mono text-sm text-[#0f172a]">aaje.store/ada-skincare</p>
-              </div>
-              <div className="rounded-md bg-[#eff6ff] p-4">
-                <p className="text-xs font-bold uppercase text-blue-800">Campaign</p>
-                <p className="mt-2 font-mono text-sm text-[#0f172a]">?ref=whatsapp_status</p>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs font-bold uppercase text-emerald-700">Demo loop</p>
-            <h2 className="mt-4 text-4xl font-semibold leading-tight text-[#0f172a]">
-              The user flow is built around one sale.
+          <div className="lg:pl-6">
+            <p className="text-[0.68rem] font-black uppercase text-[#077ef6]">Operational foundation</p>
+            <h2 className="mt-4 max-w-xl text-4xl font-black leading-tight text-[#05051f]">
+              Built for scale. Designed for simplicity.
             </h2>
-            <div className="mt-8 space-y-3">
-              {flowSteps.map((step, index) => {
-                const Icon = step.icon
-                return (
-                  <div key={step.label} className="flex items-center gap-4 rounded-md border border-[#d9dfd4] bg-white p-4">
-                    <span className="grid h-10 w-10 place-items-center rounded-md bg-[#0f172a] text-sm font-bold text-white">
-                      {index + 1}
-                    </span>
-                    <Icon className="h-5 w-5 text-[#0f766e]" />
-                    <p className="font-semibold text-[#111827]">{step.label}</p>
-                  </div>
-                )
-              })}
-            </div>
+            <p className="mt-5 max-w-xl text-sm leading-7 text-[#625d75]">
+              Everything you need to run a high-growth operation, unified in one elegant platform.
+            </p>
+            {/* Placeholder removed */}
           </div>
         </div>
       </section>
 
-      <section className="bg-[#101820] text-white">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-20 sm:px-6 lg:grid-cols-3 lg:px-8">
-          <div className="lg:col-span-1">
-            <p className="text-xs font-bold uppercase text-[#dff7e8]">Dashboard-ready</p>
-            <h2 className="mt-4 text-4xl font-semibold leading-tight">Your sales story becomes usable data.</h2>
-          </div>
-
-          <div className="grid gap-3 lg:col-span-2 md:grid-cols-3">
-            <div className="rounded-md border border-white/12 bg-white/8 p-5">
-              <BarChart3 className="h-5 w-5 text-[#dff7e8]" />
-              <p className="mt-8 text-3xl font-semibold">NGN 0</p>
-              <p className="mt-2 text-sm text-white/65">today sales before launch</p>
-            </div>
-            <div className="rounded-md border border-white/12 bg-white/8 p-5">
-              <img src={productImage} alt="Product inventory item" className="h-24 w-full rounded-md object-cover" />
-              <p className="mt-4 font-semibold">Low-stock alerts</p>
-              <p className="mt-2 text-sm text-white/65">stock triggers when quantity reaches threshold</p>
-            </div>
-            <div className="rounded-md border border-white/12 bg-white/8 p-5">
-              <img src={campaignImage} alt="Campaign analytics on laptop" className="h-24 w-full rounded-md object-cover" />
-              <p className="mt-4 font-semibold">Premium attribution</p>
-              <p className="mt-2 text-sm text-white/65">visits, carts, conversions, and revenue by source</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="pricing" className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-        <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-          <div>
-            <p className="text-xs font-bold uppercase text-emerald-700">Access rules</p>
-            <h2 className="mt-4 text-4xl font-semibold leading-tight text-[#0f172a]">
-              Start free, then unlock deeper operations when the store grows.
+      <section id="resources" className="px-5 py-20 lg:px-8">
+        <div className="mx-auto grid max-w-7xl overflow-hidden rounded-[8px] border border-[#e3ddec] bg-[#eee8f7] lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="p-8 sm:p-12">
+            <p className="text-[0.68rem] font-black uppercase text-[#625d75]">Economic identity</p>
+            <h2 className="mt-4 max-w-xl text-3xl font-black leading-tight text-[#05051f]">
+              Give every business a trusted economic identity.
             </h2>
+            <p className="mt-5 max-w-xl text-sm leading-7 text-[#625d75]">
+              Build a verifiable profile around sales history, customer trust, receipts, authenticity records, and business activity, so merchants can look credible from their first storefront to their next stage of growth.
+            </p>
+            <Link to="/signup" className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-[#077ef6]">
+              Explore economic identity
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-md border border-[#d9dfd4] bg-white p-6">
-              <h3 className="text-2xl font-semibold">Free</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                One store, AI store generation, product limits, guest checkout, Squad payments, basic inventory, dashboard, daily WhatsApp summary, and basic BizPrint.
-              </p>
-            </div>
-            <div className="rounded-md border border-[#0f172a] bg-[#0f172a] p-6 text-white">
-              <h3 className="text-2xl font-semibold">Premium</h3>
-              <p className="mt-3 text-sm leading-6 text-white/70">
-                Campaign links, advanced WhatsApp operations, deeper analytics, AI product optimization, detailed BizPrint, and multi-store support later.
-              </p>
-            </div>
+          <div className="bg-[#e5deef] p-8 sm:p-12">
+            <CertificateMockup />
           </div>
-        </div>
-
-        <div className="mt-12 flex justify-center">
-          <Link
-            to="/signup"
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0f172a] px-6 text-sm font-bold text-white transition hover:bg-[#0f766e]"
-          >
-            Create your AAJE account
-            <ArrowRight className="h-4 w-4" />
-          </Link>
         </div>
       </section>
+
+      <section className="px-5 pb-20 lg:px-8">
+        <div className="mx-auto max-w-5xl rounded-[8px] bg-[#077ef6] px-6 py-14 text-center text-white sm:px-12">
+          <h2 className="mx-auto max-w-3xl text-4xl font-black leading-tight">
+            Build the storefront, manage the operation, and grow from one place.
+          </h2>
+          <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-white/78">
+            Start with an AI-generated storefront today, then unlock WhatsApp operations, analytics, virtual accounts, and business identity as you grow.
+          </p>
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+            <Link
+              to="/signup"
+              className="inline-flex h-11 items-center justify-center rounded-[8px] bg-white px-5 text-sm font-bold text-[#077ef6] transition hover:bg-[#eef6ff]"
+            >
+              Start building free
+            </Link>
+            <Link
+              to="/login"
+              className="inline-flex h-11 items-center justify-center rounded-[8px] border border-white/35 px-5 text-sm font-bold text-white transition hover:bg-white/10"
+            >
+              Log in
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <footer className="border-t border-[#e7e1ef] px-5 py-8 lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 text-xs text-[#625d75] md:flex-row md:items-center md:justify-between">
+          <Link to="/" className="font-black text-[#077ef6]">AAJE</Link>
+          <div className="flex flex-wrap gap-5">
+            <a href="#resources" className="hover:text-[#077ef6]">Terms of service</a>
+            <a href="#resources" className="hover:text-[#077ef6]">Privacy policy</a>
+            <a href="#resources" className="hover:text-[#077ef6]">Contact support</a>
+            <a href="#solutions" className="hover:text-[#077ef6]">WhatsApp integration</a>
+          </div>
+          <p>© 2026 AAJE Commerce Platform.</p>
+        </div>
+      </footer>
     </main>
   )
 }

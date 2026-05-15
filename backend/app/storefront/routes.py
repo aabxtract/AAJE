@@ -314,6 +314,8 @@ def _store(store: Store) -> dict:
         "description": store.description,
         "theme_json": store.theme_json,
         "theme": store.theme,
+        "template": store.template or "fashion",
+        "config_json": store.config_json or {},
         "contact_whatsapp": store.contact_whatsapp,
         "has_squad_account": store.has_squad_account,
         "squad_virtual_account_number": store.squad_virtual_account_number,

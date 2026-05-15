@@ -2,10 +2,10 @@ import { Route, Routes, Navigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import Landing from './pages/Landing'
 import Signup from './pages/Signup'
+import Login from './pages/Login'
 import Onboarding from './pages/Onboarding'
-import StorePreview from './pages/StorePreview'
-import AccountConnect from './pages/AccountConnect'
-import Pricing from './pages/Pricing'
+import ConfirmBuild from './pages/ConfirmBuild'
+import Publish from './pages/Publish'
 import Dashboard from './pages/admin/Dashboard.jsx'
 import Inventory from './pages/admin/Inventory.jsx'
 import Orders from './pages/admin/Orders.jsx'
@@ -15,7 +15,6 @@ import StorePage from './pages/store/[slug].jsx'
 import Checkout from './pages/checkout/index.jsx'
 import PaymentSuccess from './pages/payment-success/index.jsx'
 
-// Simple auth check (for demo)
 function ProtectedRoute({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -48,16 +47,16 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
 
-      {/* Onboarding flow */}
+      {/* Auth */}
       <Route path="/signup" element={<Signup />} />
-      <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
-      <Route path="/store-preview" element={<ProtectedRoute><StorePreview /></ProtectedRoute>} />
-      <Route path="/account-connect" element={<ProtectedRoute><AccountConnect /></ProtectedRoute>} />
-      <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
-      <Route path="/checkout" element={<Checkout />} />
-      <Route path="/payment-success" element={<PaymentSuccess />} />
+      <Route path="/login" element={<Login />} />
 
-      {/* Admin dashboard */}
+      {/* Onboarding flow */}
+      <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+      <Route path="/confirm" element={<ProtectedRoute><ConfirmBuild /></ProtectedRoute>} />
+      <Route path="/publish" element={<ProtectedRoute><Publish /></ProtectedRoute>} />
+
+      {/* Dashboard */}
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/admin/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/admin/store-setup" element={<ProtectedRoute><StoreSetup /></ProtectedRoute>} />
@@ -65,8 +64,10 @@ export default function App() {
       <Route path="/admin/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
       <Route path="/admin/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
 
-      {/* Public storefront */}
+      {/* Public storefront + checkout */}
       <Route path="/store/:slug" element={<StorePage />} />
+      <Route path="/checkout" element={<Checkout />} />
+      <Route path="/payment-success" element={<PaymentSuccess />} />
 
       {/* Default redirect */}
       <Route path="*" element={<Navigate to="/" replace />} />

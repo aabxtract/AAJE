@@ -46,8 +46,8 @@ export default {
 
       // ── Typography ─────────────────────────────────────
       fontFamily: {
-        display: ['"Space Grotesk"', 'system-ui', 'sans-serif'],
-        body:    ['"General Sans"', '"Space Grotesk"', 'system-ui', 'sans-serif'],
+        display: ['"Montserrat Alternates"', 'system-ui', 'sans-serif'],
+        body:    ['"Montserrat Alternates"', 'system-ui', 'sans-serif'],
         mono:    ['"JetBrains Mono"', 'monospace'],
       },
       fontSize: {

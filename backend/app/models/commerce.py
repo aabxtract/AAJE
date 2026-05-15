@@ -26,6 +26,8 @@ class Store(Base):
     tagline = Column(String(255))
     theme_json = Column(JSON_TYPE, default=dict)
     theme = Column(String(50), default="default")
+    config_json = Column(JSON_TYPE, default=dict)
+    template = Column(String(50), default="fashion")
     contact_whatsapp = Column(String(20))
     whatsapp_number = Column(String(20))
     squad_virtual_account_id = Column(String(100))

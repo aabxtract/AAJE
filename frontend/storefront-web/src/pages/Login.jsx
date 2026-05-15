@@ -1,17 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Lock, Loader2, Mail, Phone, User } from 'lucide-react'
-import { signup } from '../lib/api'
+import { Loader2, Lock, Mail } from 'lucide-react'
+import { login } from '../lib/api'
 import { AuthShell, GoogleAuthButton } from '../components/AuthShell'
 
-export default function Signup() {
+export default function Login() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    password: '',
-  })
+  const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -25,21 +20,19 @@ export default function Signup() {
 
   function handleChange(event) {
     const { name, value } = event.target
-    setForm((previous) => ({ ...previous, [name]: value }))
+    setForm((prev) => ({ ...prev, [name]: value }))
     setError('')
   }
 
-  async function handleSignup(event) {
+  async function handleLogin(event) {
     event.preventDefault()
     setLoading(true)
     setError('')
 
     try {
-      const response = await signup({
+      const response = await login({
         email: form.email,
         password: form.password,
-        full_name: form.fullName,
-        phone: form.phone,
       })
 
       const { user, token } = response.data
@@ -48,10 +41,14 @@ export default function Signup() {
       localStorage.setItem('aaje_user', JSON.stringify(user))
       localStorage.setItem('aaje_user_id', user.id)
 
-      navigate('/onboarding')
+      if (!user.onboarding_complete) {
+        navigate('/onboarding')
+      } else {
+        navigate('/dashboard')
+      }
     } catch (err) {
-      console.error('Signup error:', err)
-      setError(err.response?.data?.detail || 'Signup failed. Please try again.')
+      console.error('Login error:', err)
+      setError(err.response?.data?.detail || 'Login failed. Please check your credentials.')
     } finally {
       setLoading(false)
     }
@@ -59,13 +56,13 @@ export default function Signup() {
 
   return (
     <AuthShell
-      title="Create your account"
-      subtitle="Start with a free account. No card required."
+      title="Welcome back"
+      subtitle="Log in to manage your storefront and WhatsApp operations."
       footer={
         <>
-          Already have an account?{' '}
-          <Link to="/login" className="font-bold text-[#2f22d8] hover:underline">
-            Sign in
+          Don't have an account?{' '}
+          <Link to="/signup" className="font-bold text-[#2f22d8] hover:underline">
+            Sign up
           </Link>
         </>
       }
@@ -76,16 +73,7 @@ export default function Signup() {
         </div>
       )}
 
-      <form onSubmit={handleSignup} className="space-y-5">
-        <Field
-          label="Name"
-          icon={User}
-          name="fullName"
-          value={form.fullName}
-          onChange={handleChange}
-          placeholder="Enter your name"
-          required
-        />
+      <form onSubmit={handleLogin} className="space-y-5">
         <Field
           label="Email"
           icon={Mail}
@@ -97,25 +85,13 @@ export default function Signup() {
           required
         />
         <Field
-          label="Phone"
-          icon={Phone}
-          name="phone"
-          type="tel"
-          value={form.phone}
-          onChange={handleChange}
-          placeholder="Enter your phone number"
-          required
-        />
-        <Field
           label="Password"
           icon={Lock}
           name="password"
           type="password"
           value={form.password}
           onChange={handleChange}
-          placeholder="Create password"
-          minLength={8}
-          hint="Must be at least 8 characters."
+          placeholder="Enter password"
           required
         />
 
@@ -127,10 +103,10 @@ export default function Signup() {
           {loading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Creating account...
+              Logging in...
             </>
           ) : (
-            'Sign Up'
+            'Sign In'
           )}
         </button>
       </form>
@@ -146,7 +122,7 @@ export default function Signup() {
   )
 }
 
-function Field({ label, name, value, onChange, icon: Icon, hint, type = 'text', ...props }) {
+function Field({ label, name, value, onChange, icon: Icon, type = 'text', ...props }) {
   return (
     <div>
       <label htmlFor={name} className="mb-2 block text-xs font-bold text-[#17142f]">
@@ -165,7 +141,6 @@ function Field({ label, name, value, onChange, icon: Icon, hint, type = 'text', 
           {...props}
         />
       </div>
-      {hint && <p className="mt-2 text-xs text-[#8a849b]">{hint}</p>}
     </div>
   )
 }

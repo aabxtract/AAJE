@@ -1,228 +1,219 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Send, Loader2, Sparkles, ArrowRight } from 'lucide-react'
-import { generateStore as generateStoreBlueprint } from '../lib/api'
+import { Bot, Loader2, Send, Sparkles, User as UserIcon } from 'lucide-react'
+import { generateStore } from '../lib/api'
 
-const AI_QUESTIONS = [
+const QUESTIONS = [
   {
     id: 'business',
-    question: 'What do you sell?',
-    placeholder: 'e.g., Handmade jewelry, Fresh produce, Tech accessories...',
-    type: 'product_or_service'
+    text: "Hi, I'm your AAJE store assistant. What kind of business are you building? Tell me what you sell or offer.",
+    placeholder: 'e.g., I sell handmade jewelry to young professionals in Lagos...',
   },
   {
     id: 'customers',
-    question: 'Who are your customers?',
-    placeholder: 'e.g., College students, Moms, Fashion enthusiasts...',
-    type: 'audience'
+    text: 'Nice. Who are your ideal customers? This helps me choose the right storefront direction.',
+    placeholder: 'e.g., College students, fashion lovers, moms...',
   },
   {
     id: 'style',
-    question: 'What style appeals to you?',
-    options: ['Clean & Minimal', 'Bold & Vibrant', 'Local & Traditional', 'Premium & Elegant', 'Playful & Fun'],
-    type: 'choice'
+    text: 'What style fits your brand best?',
+    options: ['Clean and minimal', 'Bold and vibrant', 'Local and traditional', 'Premium and elegant', 'Playful and fun'],
   },
   {
     id: 'name',
-    question: 'What should your store be called?',
-    placeholder: 'e.g., Ada\'s Collections, Jude Sneakers...',
-    type: 'text'
-  }
+    text: 'Last one. What should your store be called?',
+    placeholder: "e.g., Ada's Collections, Jude Sneakers...",
+  },
 ]
 
 export default function Onboarding() {
   const navigate = useNavigate()
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [answers, setAnswers] = useState({})
+  const [messages, setMessages] = useState([])
+  const [questionIndex, setQuestionIndex] = useState(0)
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [store, setStore] = useState(null)
-
-  const currentQuestion = AI_QUESTIONS[currentIndex]
-  const isComplete = currentIndex === AI_QUESTIONS.length
+  const [answers, setAnswers] = useState({})
+  const [building, setBuilding] = useState(false)
 
   useEffect(() => {
-    const seed = JSON.parse(sessionStorage.getItem('aaje_onboarding_seed') || '{}')
-    if (seed.business) {
-      setAnswers((previous) => ({ ...previous, business: seed.business }))
-      setInput(seed.business)
-    }
+    setMessages([{ role: 'ai', text: QUESTIONS[0].text }])
   }, [])
 
-  function handleSubmitAnswer() {
-    if (!input.trim() && currentQuestion.type !== 'choice') return
+  function addMessage(role, text) {
+    setMessages((prev) => [...prev, { role, text }])
+  }
 
-    const newAnswers = { ...answers, [currentQuestion.id]: input }
-    setAnswers(newAnswers)
-
-    if (currentIndex < AI_QUESTIONS.length - 1) {
-      setCurrentIndex(currentIndex + 1)
+  function advanceToNext(newAnswers, nextIndex) {
+    if (nextIndex < QUESTIONS.length) {
+      setQuestionIndex(nextIndex)
+      setTimeout(() => {
+        addMessage('ai', QUESTIONS[nextIndex].text)
+      }, 400)
       setInput('')
     } else {
-      generateStore(newAnswers)
+      buildStore(newAnswers)
     }
+  }
+
+  function handleSendText() {
+    const value = input.trim()
+    if (!value) return
+
+    addMessage('user', value)
+    const currentQ = QUESTIONS[questionIndex]
+    const newAnswers = { ...answers, [currentQ.id]: value }
+    setAnswers(newAnswers)
+    advanceToNext(newAnswers, questionIndex + 1)
   }
 
   function handleOptionSelect(option) {
-    const newAnswers = { ...answers, [currentQuestion.id]: option }
+    addMessage('user', option)
+    const currentQ = QUESTIONS[questionIndex]
+    const newAnswers = { ...answers, [currentQ.id]: option }
     setAnswers(newAnswers)
-    setCurrentIndex(currentIndex + 1)
+    advanceToNext(newAnswers, questionIndex + 1)
   }
 
-  async function generateStore(finalAnswers) {
-    setLoading(true)
+  async function buildStore(finalAnswers) {
+    setBuilding(true)
+    addMessage('ai', 'Great choices. Let me build your storefront now...')
+
     try {
       const prompt = [
         finalAnswers.business,
-        finalAnswers.customers ? `Customers: ${finalAnswers.customers}` : '',
-        finalAnswers.style ? `Style: ${finalAnswers.style}` : '',
-        finalAnswers.name ? `Preferred store name: ${finalAnswers.name}` : '',
+        finalAnswers.customers ? `Target customers: ${finalAnswers.customers}` : '',
+        finalAnswers.style ? `Style preference: ${finalAnswers.style}` : '',
+        finalAnswers.name ? `Store name: ${finalAnswers.name}` : '',
       ].filter(Boolean).join('\n')
 
-      const response = await generateStoreBlueprint(prompt || finalAnswers.business || 'AAJE storefront')
+      const response = await generateStore(prompt)
       const blueprint = response.data || {}
-      const existingStore = JSON.parse(localStorage.getItem('aaje_store') || '{}')
-      const preferredName = finalAnswers.name?.trim()
-      const generatedStore = {
-        ...blueprint,
-        ...existingStore,
-        store_name: preferredName || existingStore.store_name || blueprint.store_name || 'My Store',
-        name: preferredName || existingStore.store_name || blueprint.store_name || 'My Store',
-        slug: existingStore.slug || blueprint.slug || (preferredName || blueprint.store_name || 'my-store').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-        description: blueprint.description || existingStore.description || `${finalAnswers.business || 'Quality products'} for ${finalAnswers.customers || 'everyone'}`,
-        category: finalAnswers.business,
-        theme: blueprint.theme || finalAnswers.style,
-        products: blueprint.starter_products || existingStore.products || [],
+
+      const storeName = finalAnswers.name?.trim() || blueprint.store_name || 'My Store'
+      const storeData = {
+        template: blueprint.template || 'fashion',
+        store_name: storeName,
+        description: blueprint.description || `${finalAnswers.business || 'Quality products'} for ${finalAnswers.customers || 'everyone'}`,
+        tagline: blueprint.tagline || '',
+        theme: blueprint.theme || 'default',
+        categories: blueprint.categories || ['Popular', 'New Arrivals'],
+        starter_products: blueprint.products || blueprint.starter_products || [],
+        slug: (storeName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
       }
 
-      setStore(generatedStore)
-      sessionStorage.setItem('aaje_generated_store', JSON.stringify(generatedStore))
-      setCurrentIndex(currentIndex + 1)
+      sessionStorage.setItem('aaje_store_build', JSON.stringify(storeData))
+      sessionStorage.setItem('aaje_onboarding_answers', JSON.stringify(finalAnswers))
+
+      addMessage('ai', `Your store "${storeName}" is ready. Let me show you the details.`)
+
+      setTimeout(() => {
+        navigate('/confirm')
+      }, 1200)
     } catch (err) {
-      console.error('AI generation error:', err)
-      alert(err.response?.data?.detail || 'Could not generate your store preview. Please try again.')
-    } finally {
-      setLoading(false)
+      console.error('Build error:', err)
+      addMessage('ai', 'Something went wrong generating your store. Please try again.')
+      setBuilding(false)
     }
   }
 
-  if (isComplete && store) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary-50 to-white p-4">
-        <div className="w-full max-w-2xl">
-          <div className="rounded-2xl bg-white p-8 shadow-lg text-center">
-            <div className="inline-flex items-center justify-center rounded-full bg-gradient-to-br from-primary-100 to-primary-50 p-4 mb-4">
-              <Sparkles className="h-8 w-8 text-primary-600" />
-            </div>
-            
-            <h1 className="text-3xl font-bold text-gray-900">Your storefront is ready!</h1>
-            <p className="mt-2 text-gray-600">We've created a beautiful store for you.</p>
-
-            <div className="mt-8 rounded-xl bg-gray-50 p-6 text-left">
-              <div className="space-y-3">
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase">Store name</p>
-                  <p className="text-lg font-bold text-gray-900">{store.store_name || store.name}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase">Description</p>
-                  <p className="text-gray-700">{store.description}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase">Theme</p>
-                  <p className="text-gray-700">{store.theme}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase">Sample products generated</p>
-                  <p className="text-gray-700">{store.products?.length || store.starter_products?.length || 0} starter products</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <button
-                onClick={() => navigate('/store-preview')}
-                className="flex-1 rounded-lg bg-primary-600 px-4 py-3 font-semibold text-white transition hover:bg-primary-700 flex items-center justify-center gap-2"
-              >
-                <ArrowRight className="h-4 w-4" />
-                Review Store
-              </button>
-            </div>
-          </div>
-        </div>
-      </main>
-    )
-  }
+  const currentQ = QUESTIONS[questionIndex]
+  const isOptions = currentQ?.options && questionIndex < QUESTIONS.length
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary-50 to-white p-4">
-      <div className="w-full max-w-lg">
-        <div className="rounded-2xl bg-white p-8 shadow-lg">
-          {/* Progress indicator */}
-          <div className="mb-6">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary-600" />
-              <p className="text-sm text-gray-600">
-                Step <span className="font-bold">{currentIndex + 1}</span> of <span className="font-bold">{AI_QUESTIONS.length}</span>
-              </p>
-            </div>
-            <div className="mt-3 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-primary-600 to-primary-500 transition-all duration-300"
-                style={{ width: `${((currentIndex + 1) / AI_QUESTIONS.length) * 100}%` }}
-              />
-            </div>
+    <main className="flex min-h-screen flex-col bg-[#fbf8ff] text-[#12102b]">
+      <header className="border-b border-[#ece7f5] bg-white px-4 py-4">
+        <div className="mx-auto flex max-w-3xl items-center gap-3">
+          <div className="grid h-9 w-9 place-items-center rounded-[8px] bg-[#5a4be7] text-sm font-black text-white">A</div>
+          <div>
+            <p className="text-sm font-semibold">AAJE Store Builder</p>
+            <p className="text-xs text-[#74708a]">AI is setting up your storefront</p>
           </div>
+          <div className="ml-auto flex items-center gap-2 rounded-full bg-[#f2edff] px-3 py-1">
+            <Sparkles className="h-4 w-4 text-[#5a4be7]" />
+            <span className="text-xs font-semibold text-[#5a4be7]">
+              Step {Math.min(questionIndex + 1, QUESTIONS.length)} of {QUESTIONS.length}
+            </span>
+          </div>
+        </div>
+      </header>
 
-          {/* Question */}
-          <h2 className="text-2xl font-bold text-gray-900">{currentQuestion.question}</h2>
+      <div className="flex-1 overflow-y-auto px-4 py-8">
+        <div className="mx-auto max-w-3xl space-y-5">
+          {messages.map((msg, index) => (
+            <div key={index} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+              {msg.role === 'ai' && (
+                <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-[#5a4be7] text-white">
+                  <Bot className="h-4 w-4" />
+                </div>
+              )}
+              <div
+                className={`max-w-[82%] rounded-[16px] px-4 py-3 text-sm leading-relaxed ${
+                  msg.role === 'user'
+                    ? 'bg-[#5a4be7] text-white'
+                    : 'border border-[#ece7f5] bg-white text-[#12102b]'
+                }`}
+              >
+                {msg.text}
+              </div>
+              {msg.role === 'user' && (
+                <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-[#ece6ff] text-[#5a4be7]">
+                  <UserIcon className="h-4 w-4" />
+                </div>
+              )}
+            </div>
+          ))}
 
-          {/* Answer input/options */}
-          <div className="mt-6 space-y-3">
-            {currentQuestion.type === 'choice' && currentQuestion.options ? (
-              <>
-                {currentQuestion.options.map((option) => (
+          {building && (
+            <div className="flex gap-3">
+              <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-[#5a4be7] text-white">
+                <Bot className="h-4 w-4" />
+              </div>
+              <div className="flex items-center gap-2 rounded-[16px] border border-[#ece7f5] bg-white px-4 py-3 text-sm text-[#74708a]">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Building your store...
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {!building && questionIndex < QUESTIONS.length && (
+        <div className="border-t border-[#ece7f5] bg-white px-4 py-4">
+          <div className="mx-auto max-w-3xl">
+            {isOptions ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {currentQ.options.map((option) => (
                   <button
                     key={option}
                     onClick={() => handleOptionSelect(option)}
-                    className="w-full rounded-lg border-2 border-gray-200 bg-white px-4 py-3 text-left font-medium text-gray-900 transition hover:border-primary-500 hover:bg-primary-50"
+                    className="rounded-[8px] border border-[#e4e1ee] bg-white px-4 py-3 text-left text-sm font-medium text-[#12102b] transition hover:border-[#5a4be7] hover:bg-[#f4efff]"
                   >
                     {option}
                   </button>
                 ))}
-              </>
+              </div>
             ) : (
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSubmitAnswer()}
-                  placeholder={currentQuestion.placeholder}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => event.key === 'Enter' && handleSendText()}
+                  placeholder={currentQ?.placeholder || 'Type your answer...'}
                   autoFocus
-                  className="input-field flex-1"
+                  className="flex-1 rounded-[8px] border border-[#e4e1ee] bg-[#fafafa] px-4 py-3 text-sm outline-none transition placeholder:text-[#9b97aa] focus:border-[#5a4be7] focus:ring-2 focus:ring-[#ece6ff]"
                 />
                 <button
-                  onClick={handleSubmitAnswer}
-                  disabled={!input.trim() || loading}
-                  className="btn-primary px-4"
+                  onClick={handleSendText}
+                  disabled={!input.trim()}
+                  className="grid h-12 w-12 place-items-center rounded-[8px] bg-[#5a4be7] text-white transition hover:bg-[#493bd0] disabled:opacity-40"
                 >
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
+                  <Send className="h-4 w-4" />
                 </button>
               </div>
             )}
           </div>
-
-          {/* Footer */}
-          <p className="mt-6 text-xs text-gray-500 text-center">
-            AI-powered storefront setup. Takes 2 minutes.
-          </p>
         </div>
-      </div>
+      )}
     </main>
   )
 }
