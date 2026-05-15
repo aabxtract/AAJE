@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Loader2, MessageCircle, ShoppingBag } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import StorefrontRenderer from '../../templates/StorefrontRenderer'
 import CheckoutForm from '../../components/CheckoutForm'
-import ProductCard from '../../components/ProductCard'
-import StoreHeader from '../../components/StoreHeader'
 import { createOrder, getProductsByStore, getStoreBySlug, initiatePayment } from '../../lib/api'
 
 export default function StorePage() {
@@ -12,7 +11,6 @@ export default function StorePage() {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
-  const [category, setCategory] = useState('all')
   const [checkoutLoading, setCheckoutLoading] = useState(false)
 
   useEffect(() => {
@@ -29,9 +27,6 @@ export default function StorePage() {
     }
     load()
   }, [slug])
-
-  const categories = useMemo(() => ['all', ...new Set(products.map((product) => product.category).filter(Boolean))], [products])
-  const visible = category === 'all' ? products : products.filter((product) => product.category === category)
 
   async function checkout(data) {
     setCheckoutLoading(true)
@@ -54,7 +49,7 @@ export default function StorePage() {
           customer_phone: order.customer_phone,
         })
         if (paymentRes.data.payment_link) window.location.href = paymentRes.data.payment_link
-        else window.location.href = `/payment-success?order_id=${order.id}&reference=${paymentRes.data.payment_reference || ''}`
+        else window.location.href = `/payment-success?order_id=${order.id}&reference=${paymentRes.data.reference || paymentRes.data.payment_reference || ''}&simulate=1`
       } catch {
         window.location.href = `/payment-success?order_id=${order.id}&simulate=1`
       }
@@ -69,30 +64,48 @@ export default function StorePage() {
     else await navigator.clipboard.writeText(url)
   }
 
-  if (loading) return <main className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary-600" /></main>
-  if (!store) return <main className="flex min-h-screen items-center justify-center text-center"><div><h1 className="text-2xl font-bold">Store not found</h1><p className="text-gray-500">This storefront is not available.</p></div></main>
-  if (selected) return <CheckoutForm product={selected} store={store} loading={checkoutLoading} onCancel={() => setSelected(null)} onSubmit={checkout} />
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-50">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+      </main>
+    )
+  }
 
-  const whatsapp = (store.contact_whatsapp || '').replace(/\D/g, '')
+  if (!store) {
+    return (
+      <main className="flex min-h-screen items-center justify-center text-center">
+        <div>
+          <h1 className="text-2xl font-bold">Store not found</h1>
+          <p className="text-gray-500">This storefront is not available.</p>
+        </div>
+      </main>
+    )
+  }
+
+  // If a product is selected, show the checkout form
+  if (selected) {
+    return <CheckoutForm product={selected} store={store} loading={checkoutLoading} onCancel={() => setSelected(null)} onSubmit={checkout} />
+  }
+
+  // Build the config for the renderer from the store's config_json
+  const config = {
+    template: store.template || store.config_json?.template || 'fashion',
+    theme: store.theme || store.config_json?.theme || 'default',
+    store_name: store.store_name,
+    tagline: store.tagline || store.config_json?.tagline || '',
+    description: store.description || store.config_json?.description || '',
+    categories: store.config_json?.categories || [...new Set(products.map((p) => p.category).filter(Boolean))],
+    products: store.config_json?.products || [],
+    contact_whatsapp: store.contact_whatsapp,
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <StoreHeader store={store} onShare={share} />
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {categories.length > 1 && (
-          <div className="mb-6 flex gap-2 overflow-x-auto pb-2">
-            {categories.map((item) => <button key={item} className={`rounded-full px-4 py-2 text-sm font-semibold ${category === item ? 'bg-primary-600 text-white' : 'border bg-white text-gray-700'}`} onClick={() => setCategory(item)}>{item === 'all' ? 'All Products' : item}</button>)}
-          </div>
-        )}
-        {visible.length ? (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {visible.map((product) => <ProductCard key={product.id} product={product} onSelect={setSelected} />)}
-          </div>
-        ) : (
-          <div className="py-20 text-center text-gray-500"><ShoppingBag className="mx-auto mb-3 h-12 w-12 text-gray-300" />No products available yet.</div>
-        )}
-      </main>
-      {whatsapp && <a href={`https://wa.me/${whatsapp}`} target="_blank" rel="noreferrer" className="fixed bottom-5 right-5 inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg"><MessageCircle className="h-5 w-5" />WhatsApp</a>}
-    </div>
+    <StorefrontRenderer
+      config={config}
+      products={products}
+      onSelect={setSelected}
+      onShare={share}
+    />
   )
 }

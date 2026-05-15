@@ -46,5 +46,6 @@ export function statusClass(status) {
 }
 
 export function getDemoUserId() {
-  return localStorage.getItem('aaje_user_id') || import.meta.env.VITE_DEMO_USER_ID || 'user_123'
+  const storedUser = JSON.parse(localStorage.getItem('aaje_user') || '{}')
+  return storedUser.id || localStorage.getItem('aaje_user_id') || import.meta.env.VITE_DEMO_USER_ID || 'user_123'
 }

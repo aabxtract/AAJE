@@ -14,6 +14,8 @@ class User(Base):
     password_hash = Column(String(255))
     full_name = Column(String(100))
     phone = Column(String(20))
+    auth_provider = Column(String(50), default="email")
+    plan = Column(String(50), default="free")
     whatsapp_no = Column(String(20), unique=True, nullable=True)
     whatsapp_connected = Column(Boolean, default=False)
     location = Column(String(100))

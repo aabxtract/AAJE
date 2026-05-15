@@ -33,18 +33,110 @@ def ref_slugify(value: str) -> str:
     return slug[:80] or "campaign"
 
 
+# ── Template selection keywords ──────────────────────────────────────
+TEMPLATE_KEYWORDS: dict[str, list[str]] = {
+    "fashion": [
+        "fashion", "clothes", "clothing", "thrift", "shoes", "sneaker", "bag",
+        "jewelry", "wears", "dress", "shirt",
+        "boutique", "fabric", "ankara", "leather", "vintage", "style", "wear",
+        "apparel", "hat", "cap", "watch",
+    ],
+    "gadgets": [
+        "gadget", "phone", "laptop", "electronics", "tech", "computer",
+        "charger", "speaker", "headphone", "earphone", "earbuds", "tablet",
+        "console", "gaming", "camera", "drone", "smart", "device", "cable",
+        "power bank", "accessory", "accessories", "screen", "protector",
+        "repair", "iphone", "samsung", "android",
+    ],
+    "food": [
+        "food", "catering", "drinks", "drink", "restaurant", "kitchen", "cook",
+        "bake", "bakery", "snack", "meal", "pepper", "spice", "rice", "jollof",
+        "suya", "grill", "juice", "smoothie", "cake", "pastry", "shawarma",
+        "burger", "pizza", "coffee", "tea", "wine", "bar", "fish", "chicken",
+        "meat", "vegetable", "fruit",
+    ],
+    "creator": [
+        "service", "creator", "freelance", "design", "photography", "photo",
+        "video", "music", "art", "craft", "digital", "creative", "writing",
+        "tutor", "coaching", "consulting", "makeup", "beauty", "hair", "salon",
+        "barber", "tattoo", "event", "dj", "mc", "print", "tailor", "sewing",
+    ],
+}
+
+# ── Starter product presets per template ─────────────────────────────
+_STARTER_PRODUCTS: dict[str, list[dict]] = {
+    "fashion": [
+        {"name": "Classic T-Shirt", "type": "product", "description": "Premium cotton tee for everyday wear.", "category": "Tops", "price": 8500, "stock_quantity": 20},
+        {"name": "Denim Jeans", "type": "product", "description": "Slim-fit denim with stretch comfort.", "category": "Bottoms", "price": 15000, "stock_quantity": 12},
+        {"name": "Leather Sneakers", "type": "product", "description": "Handcrafted leather kicks.", "category": "Shoes", "price": 22000, "stock_quantity": 8},
+    ],
+    "gadgets": [
+        {"name": "Fast Charger", "type": "product", "description": "65W USB-C fast charging adapter.", "category": "Accessories", "price": 5500, "stock_quantity": 30},
+        {"name": "Wireless Earbuds", "type": "product", "description": "Bluetooth 5.3 earbuds with noise cancellation.", "category": "Audio", "price": 12000, "stock_quantity": 15},
+        {"name": "Phone Case", "type": "product", "description": "Shockproof clear case with camera protection.", "category": "Accessories", "price": 3500, "stock_quantity": 50},
+    ],
+    "food": [
+        {"name": "Jollof Rice Platter", "type": "product", "description": "Party-style jollof with chicken and plantain.", "category": "Meals", "price": 3500, "stock_quantity": 25},
+        {"name": "Shawarma Wrap", "type": "product", "description": "Beef shawarma with fresh veggies and sauce.", "category": "Snacks", "price": 2500, "stock_quantity": 30},
+        {"name": "Fresh Smoothie", "type": "product", "description": "Blended fruits — mango, banana, strawberry.", "category": "Drinks", "price": 2000, "stock_quantity": 20},
+    ],
+    "creator": [
+        {"name": "Basic Package", "type": "service", "description": "Standard service package for new clients.", "category": "Services", "price": 15000, "stock_quantity": 0},
+        {"name": "Premium Package", "type": "service", "description": "Full-service premium offering.", "category": "Services", "price": 35000, "stock_quantity": 0},
+        {"name": "Consultation", "type": "service", "description": "1-hour consultation session.", "category": "Consultation", "price": 10000, "stock_quantity": 0},
+    ],
+}
+
+_TEMPLATE_CATEGORIES: dict[str, list[str]] = {
+    "fashion": ["Tops", "Bottoms", "Shoes", "Accessories"],
+    "gadgets": ["Phones", "Accessories", "Audio", "Computing"],
+    "food": ["Meals", "Snacks", "Drinks", "Platters"],
+    "creator": ["Services", "Consultation", "Packages"],
+}
+
+_TEMPLATE_THEMES: dict[str, str] = {
+    "fashion": "warm_coral",
+    "gadgets": "dark_blue",
+    "food": "fresh_green",
+    "creator": "soft_purple",
+}
+
+_TEMPLATE_TAGLINES: dict[str, str] = {
+    "fashion": "Style that speaks for you.",
+    "gadgets": "Smart tech for everyday life.",
+    "food": "Fresh flavours delivered to you.",
+    "creator": "Quality work, every time.",
+}
+
+
+def _detect_template(text: str) -> str:
+    """Match business description keywords to a template name."""
+    lower = text.lower()
+    scores: dict[str, int] = {t: 0 for t in TEMPLATE_KEYWORDS}
+    for template, keywords in TEMPLATE_KEYWORDS.items():
+        for kw in keywords:
+            if kw in lower:
+                scores[template] += 1
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else "fashion"
+
+
 async def generate_store_blueprint(description: str) -> dict:
-    words = [w.capitalize() for w in re.findall(r"[A-Za-z]+", description)[:3]]
-    base = " ".join(words) or "AAJE Store"
+    """AI config generator: returns a StoreConfig JSON from a business prompt."""
+    template = _detect_template(description)
+
+    # Extract a store name from the prompt
+    words = [w.capitalize() for w in re.findall(r"[A-Za-z]+", description) if len(w) > 2]
+    base_name = " ".join(words[:3]) if words else "AAJE Store"
+
     return {
-        "store_name": f"{base} Market",
-        "tagline": "Simple, trusted, and ready for customers.",
+        "template": template,
+        "theme": _TEMPLATE_THEMES[template],
+        "store_name": base_name,
+        "tagline": _TEMPLATE_TAGLINES[template],
         "description": description,
-        "categories": ["Popular", "New Arrivals", "Services"],
-        "theme": "clean_minimal",
-        "starter_products": [
-            {"name": "Starter Item", "type": "product", "description": "Edit this item after setup.", "category": "Popular", "price": 5000, "stock_quantity": 10},
-        ],
+        "categories": _TEMPLATE_CATEGORIES[template],
+        "products": _STARTER_PRODUCTS[template],
     }
 
 
@@ -57,6 +149,17 @@ async def create_store(db: AsyncSession, user: User, payload: dict) -> Store:
         slug = f"{base_slug}-{suffix}"
         suffix += 1
 
+    # Build config_json from payload
+    config_json = payload.get("config_json") or {
+        "template": payload.get("template", "fashion"),
+        "theme": payload.get("theme") if isinstance(payload.get("theme"), str) else "default",
+        "store_name": store_name,
+        "tagline": payload.get("tagline", ""),
+        "description": payload.get("description", ""),
+        "categories": payload.get("categories", []),
+        "products": payload.get("starter_products", []),
+    }
+
     store = Store(
         user_id=user.id,
         store_name=store_name,
@@ -65,13 +168,16 @@ async def create_store(db: AsyncSession, user: User, payload: dict) -> Store:
         description=payload.get("description"),
         store_description=payload.get("description"),
         tagline=payload.get("tagline"),
-        theme_json=payload.get("theme_json") or payload.get("theme") or {},
-        theme=(payload.get("theme") or {}).get("name") if isinstance(payload.get("theme"), dict) else payload.get("theme", "default"),
+        theme_json=payload.get("theme_json") or {},
+        theme=config_json.get("theme", "default"),
+        template=config_json.get("template", "fashion"),
+        config_json=config_json,
         contact_whatsapp=user.whatsapp_no,
         whatsapp_number=user.whatsapp_no or user.phone,
         has_squad_account=bool(payload.get("has_squad_account", False)),
     )
     db.add(store)
+    user.onboarding_complete = True
     await db.flush()
 
     for product in payload.get("starter_products") or []:
@@ -82,7 +188,7 @@ async def create_store(db: AsyncSession, user: User, payload: dict) -> Store:
         "source": "storefront",
         "user_id": str(user.id),
         "store_id": str(store.id),
-        "metadata": {"store_name": store.store_name, "slug": store.slug},
+        "metadata": {"store_name": store.store_name, "slug": store.slug, "template": store.template},
     })
     return store
 
@@ -92,10 +198,13 @@ async def create_storefront_from_description(db: AsyncSession, user: User, descr
     blueprint = await generate_store_blueprint(description)
     store = await create_store(db, user, {
         "store_name": blueprint["store_name"],
-        "description": blueprint["store_description"] if "store_description" in blueprint else blueprint["description"],
+        "description": blueprint.get("description", description),
         "tagline": blueprint.get("tagline"),
-        "theme": blueprint.get("theme") or "clean_minimal",
-        "starter_products": blueprint.get("products") or blueprint.get("starter_products") or [],
+        "template": blueprint.get("template", "fashion"),
+        "theme": blueprint.get("theme", "default"),
+        "categories": blueprint.get("categories", []),
+        "starter_products": blueprint.get("products", []),
+        "config_json": blueprint,
         "has_squad_account": create_squad_account,
     })
     await ensure_wallet(db, user.id)
@@ -200,11 +309,9 @@ async def create_order(db: AsyncSession, store: Store, payload: dict) -> Order:
     if not items_payload:
         raise ValueError("Order requires at least one item")
 
-    # Enforce cart max size
     if len(items_payload) > 4:
         raise ValueError("Cart may contain at most 4 products")
 
-    # Require customer contact info for guest checkout
     if not payload.get("customer_phone") or not payload.get("customer_name"):
         raise ValueError("Customer name and phone are required")
 
@@ -215,6 +322,8 @@ async def create_order(db: AsyncSession, store: Store, payload: dict) -> Order:
         if not product or product.store_id != store.id:
             raise ValueError("Invalid product for this store")
         quantity = int(item.get("quantity") or 1)
+        if product.type != "service" and (product.stock_quantity or 0) < quantity:
+            raise ValueError(f"{product.name} is out of stock")
         line_total = Decimal(product.price) * quantity
         total += line_total
         resolved_items.append((product, quantity, line_total))

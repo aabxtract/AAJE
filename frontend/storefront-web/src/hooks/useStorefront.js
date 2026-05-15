@@ -10,7 +10,9 @@ export function useOwnerStore() {
     setLoading(true)
     try {
       const res = await api.getStoresByUser(getDemoUserId())
-      setStore(res.data?.[0] || null)
+      const ownerStore = res.data?.[0] || null
+      setStore(ownerStore)
+      if (ownerStore) localStorage.setItem('aaje_store', JSON.stringify(ownerStore))
     } finally {
       setLoading(false)
     }

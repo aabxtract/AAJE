@@ -13,7 +13,7 @@ class Store(Base):
     __tablename__ = "stores"
     __table_args__ = (
         CheckConstraint("slug = lower(slug)", name="ck_stores_slug_lowercase"),
-       # CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]*$'", name="ck_stores_slug_url_safe"),
+        # CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]*$'", name="ck_stores_slug_url_safe"),
     )
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -26,6 +26,8 @@ class Store(Base):
     tagline = Column(String(255))
     theme_json = Column(JSON_TYPE, default=dict)
     theme = Column(String(50), default="default")
+    config_json = Column(JSON_TYPE, default=dict)
+    template = Column(String(50), default="fashion")
     contact_whatsapp = Column(String(20))
     whatsapp_number = Column(String(20))
     squad_virtual_account_id = Column(String(100))
