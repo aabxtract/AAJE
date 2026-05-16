@@ -355,7 +355,12 @@ async def create_storefront_from_description(db: AsyncSession, user: User, descr
     })
     await ensure_wallet(db, user.id)
     if create_squad_account:
-        await ensure_store_virtual_account(db, user, store)
+        try:
+            await ensure_store_virtual_account(db, user, store)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to create Squad account: {e}")
+            # Non-fatal: store is still created, but banking features might be limited
     return store
 
 
