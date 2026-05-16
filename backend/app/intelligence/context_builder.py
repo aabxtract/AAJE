@@ -33,7 +33,7 @@ async def build_context(db: AsyncSession, user: User, persona: str | None = None
         },
         "whatsapp": {
             "connected": bool(user.whatsapp_connected),
-            "tier": "premium" if "premium" in (user.persona_mode or "") else "free",
+            "tier": "premium",
             "role": "storefront_operations_extension",
         },
     }
@@ -66,7 +66,7 @@ async def _storefront_context(db: AsyncSession, user: User) -> dict:
         if order.payment_status == "paid" and order.paid_at and order.paid_at.date() == today
     ]
     public_base = (settings.frontend_url or settings.app_public_url or "").rstrip("/")
-    store_path = f"/{store.slug}"
+    store_path = f"/store/{store.slug}"
     store_link = f"{public_base}{store_path}" if public_base else store_path
     return {
         "store": {

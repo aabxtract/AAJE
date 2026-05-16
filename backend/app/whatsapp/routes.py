@@ -710,7 +710,7 @@ async def mono_mock_connect(reference: str = ""):
             <label for="password">Password</label>
             <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Password" required>
           </div>
-          <p class="secure-note">This is AAJE's mock connect page. It does not contact Mono or your bank, and it should only be used for demo onboarding.</p>
+        <p class="secure-note">This is AAJE's mock connect page. It does not contact Mono or your bank, and it should only be used for the demo account link.</p>
           <button class="primary" type="submit">Continue</button>
         </form>
       </section>
@@ -738,7 +738,7 @@ async def mono_mock_connect(reference: str = ""):
           <svg width="38" height="38" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <h2>Account linked</h2>
-        <p class="lead">Return to WhatsApp and send <strong>done</strong> to continue your AAJE setup.</p>
+        <p class="lead">Return to WhatsApp and send <strong>help</strong> to manage your connected AAJE storefront.</p>
         <a class="primary return-link" href="{safe_return_url}">Return to WhatsApp</a>
       </section>
 

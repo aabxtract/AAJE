@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Lock, Loader2, Mail, Phone, User } from 'lucide-react'
 import { signup } from '../lib/api'
 import { AuthShell, GoogleAuthButton } from '../components/AuthShell'
 
 export default function Signup() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [form, setForm] = useState({
     fullName: '',
     email: '',
@@ -16,12 +17,14 @@ export default function Signup() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('aaje_user') || 'null')
-    if (user) {
-      if (user.onboarding_complete) navigate('/dashboard')
-      else navigate('/onboarding')
+    const params = new URLSearchParams(location.search)
+    const wa = params.get('wa')
+    if (wa) {
+      setForm(prev => ({ ...prev, phone: wa }))
+      localStorage.setItem('wa_redirect', 'true')
     }
-  }, [navigate])
+    
+  }, [location.search])
 
   function handleChange(event) {
     const { name, value } = event.target
@@ -64,7 +67,7 @@ export default function Signup() {
       footer={
         <>
           Already have an account?{' '}
-          <Link to="/login" className="font-bold text-[#2f22d8] hover:underline">
+          <Link to={`/login${location.search}`} className="font-bold text-[#2f22d8] hover:underline">
             Sign in
           </Link>
         </>

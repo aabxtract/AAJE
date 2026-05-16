@@ -1,5 +1,5 @@
-/* ── Google Fonts ───────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Montserrat+Alternates:wght@200;300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -28,7 +28,7 @@
     --surface-base:   #FAFAFA;
     --surface-card:   #FFFFFF;
     --surface-muted:  #F4F4F8;
-    --surface-border: #111111;
+    --surface-border: #E3DDEC;
     --surface-subtle: #E8E8F0;
 
     /* Ink */
@@ -36,11 +36,11 @@
     --ink-muted:      #6B7280;
     --ink-faint:      #9CA3AF;
 
-    /* Neo-brut shadow tokens */
-    --shadow-brut-sm: 2px 2px 0px 0px #111111;
-    --shadow-brut:    4px 4px 0px 0px #111111;
-    --shadow-brut-md: 6px 6px 0px 0px #111111;
-    --shadow-brut-lg: 8px 8px 0px 0px #111111;
+    /* Soft elevation tokens */
+    --shadow-brut-sm: 0 4px 14px rgba(35,18,82,0.06);
+    --shadow-brut:    0 12px 30px rgba(35,18,82,0.08);
+    --shadow-brut-md: 0 18px 45px rgba(35,18,82,0.10);
+    --shadow-brut-lg: 0 24px 70px rgba(35,18,82,0.12);
   }
 
   html {
@@ -67,6 +67,17 @@
     font: inherit;
   }
 
+  /* Prevent buttons from showing black highlight on mobile tap */
+  button, a, [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Fix for iOS Safari button active state */
+  button:active, a:active {
+    -webkit-filter: brightness(0.9);
+    filter: brightness(0.9);
+  }
+
   *:focus-visible {
     outline: 2.5px solid var(--brand-navy);
     outline-offset: 2px;
@@ -86,12 +97,12 @@
 
   /* ── BUTTONS ───────────────────────────────────────────────── */
 
-  /* Primary – navy, neo-brut stroke + shadow */
+  /* Primary buttons */
   .btn {
     @apply inline-flex items-center justify-center gap-2
            font-display font-bold text-sm tracking-wide
-           rounded-xl border-2 border-surface-border
-           transition-all duration-150 cursor-pointer select-none
+           rounded-[8px] border border-surface-border
+           transition-all duration-200 cursor-pointer select-none
            focus-visible:ring-4 focus-visible:ring-brand-navy/30
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
@@ -100,41 +111,40 @@
     @apply btn px-5 py-2.5
            bg-brand-navy text-white
            shadow-brut
-           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
-           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
+           hover:bg-[#0269d2] hover:shadow-brut-md
+           active:shadow-brut-sm;
   }
 
   .btn-dark {
     @apply btn px-5 py-2.5
            bg-brand-dark text-white
            shadow-brut
-           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
-           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
+           hover:bg-[#121246] hover:shadow-brut-md
+           active:shadow-brut-sm;
   }
 
   .btn-yellow {
     @apply btn px-5 py-2.5
-           bg-accent-yellow text-brand-dark
+           border-[#dcd6ea] bg-[#eef6ff] text-brand-navy
            shadow-brut
-           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
-           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
+           hover:bg-white hover:shadow-brut-md
+           active:shadow-brut-sm;
   }
 
   .btn-coral {
     @apply btn px-5 py-2.5
            bg-accent-coral text-white
            shadow-brut
-           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
-           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
+           hover:bg-[#e85c5c] hover:shadow-brut-md
+           active:shadow-brut-sm;
   }
 
   .btn-outline {
     @apply btn px-5 py-2.5
            bg-white text-brand-dark
            shadow-brut
-           hover:bg-surface-muted
-           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
-           active:translate-x-0 active:translate-y-0 active:shadow-brut-sm;
+           hover:border-brand-navy hover:text-brand-navy hover:shadow-brut-md
+           active:shadow-brut-sm;
   }
 
   .btn-ghost {
@@ -154,15 +164,15 @@
 
   /* ── CARDS ─────────────────────────────────────────────────── */
 
-  /* Base card — neo-brutalist thick border, soft flat shadow */
+  /* Base card */
   .card {
-    @apply bg-surface-card rounded-2xl border-2 border-surface-border
+    @apply bg-surface-card rounded-[8px] border border-surface-border
            shadow-brut transition-all duration-200;
   }
 
   .card-hover {
     @apply card
-           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md
+           hover:-translate-y-0.5 hover:shadow-brut-md
            cursor-pointer;
   }
 
@@ -215,12 +225,12 @@
   /* ── INPUTS ────────────────────────────────────────────────── */
 
   .input-field {
-    @apply block w-full rounded-xl border-2 border-surface-border
+    @apply block w-full rounded-[8px] border border-surface-border
            bg-white px-4 py-3 text-sm font-medium
            outline-none transition-all duration-200
            placeholder:text-ink-faint
            focus:border-brand-navy focus:shadow-glow-navy
-           hover:border-ink/60;
+           hover:border-[#bfb7d1];
   }
 
   .input-field-label {
@@ -230,9 +240,9 @@
   /* ── BADGES ────────────────────────────────────────────────── */
 
   .badge {
-    @apply inline-flex items-center gap-1 rounded-full border-2 border-surface-border
+    @apply inline-flex items-center gap-1 rounded-full border border-surface-border
            px-2.5 py-0.5 text-2xs font-bold uppercase tracking-widest
-           shadow-brut-sm transition-all duration-150;
+           transition-all duration-150;
   }
 
   .badge-navy    { @apply badge bg-brand-navy text-white; }
@@ -274,13 +284,13 @@
   }
 
   .pill-nav-item-active {
-    @apply pill-nav-item bg-brand-dark text-white shadow-brut-sm;
+    @apply pill-nav-item bg-[#eef6ff] text-brand-navy;
   }
 
   /* ── FLOATING DECORATORS ───────────────────────────────────── */
 
   .deco-circle {
-    @apply absolute rounded-full border-2 border-surface-border pointer-events-none;
+    @apply absolute rounded-full border border-surface-border pointer-events-none;
   }
 
   .deco-star {
@@ -297,22 +307,22 @@
   /* ── DIVIDER ───────────────────────────────────────────────── */
 
   .divider {
-    @apply border-t-2 border-surface-border;
+    @apply border-t border-surface-border;
   }
 
   /* ── TOOLTIP ───────────────────────────────────────────────── */
 
   .tooltip {
-    @apply absolute z-50 rounded-lg border-2 border-surface-border bg-brand-dark
-           px-3 py-1.5 text-xs font-bold text-white shadow-brut-sm
+    @apply absolute z-50 rounded-lg border border-surface-border bg-brand-dark
+           px-3 py-1.5 text-xs font-bold text-white shadow-brut
            pointer-events-none whitespace-nowrap;
   }
 
   /* ── ALERT BANNERS ─────────────────────────────────────────── */
 
   .alert {
-    @apply flex items-start gap-3 rounded-xl border-2 border-surface-border
-           p-4 text-sm font-medium shadow-brut-sm;
+    @apply flex items-start gap-3 rounded-[8px] border border-surface-border
+           p-4 text-sm font-medium shadow-brut;
   }
   .alert-info   { @apply alert bg-accent-sky/20 text-brand-dark; }
   .alert-warn   { @apply alert bg-accent-yellow/40 text-brand-dark; }
@@ -333,12 +343,12 @@
   /* ── TABLE ─────────────────────────────────────────────────── */
 
   .data-table {
-    @apply w-full text-sm border-2 border-surface-border rounded-2xl overflow-hidden;
+    @apply w-full text-sm border border-surface-border rounded-[8px] overflow-hidden;
   }
 
   .data-table th {
     @apply bg-surface-muted px-4 py-3 text-left text-xs font-bold uppercase
-           tracking-widest text-ink-muted border-b-2 border-surface-border;
+           tracking-widest text-ink-muted border-b border-surface-border;
   }
 
   .data-table td {
@@ -372,13 +382,14 @@
 
   /* Font family shortcuts */
   .font-display { font-family: 'Montserrat Alternates', system-ui, sans-serif; }
+  .font-poppins { font-family: 'Poppins', sans-serif; }
 
   /* Tight letter-spacing on large headings */
   .tracking-display { letter-spacing: -0.04em; }
 
-  /* Outlined text — neo-brut headline treatment */
+  /* Outlined text */
   .text-outline {
-    -webkit-text-stroke: 2.5px #111111;
+    -webkit-text-stroke: 1.5px #030328;
     color: transparent;
   }
 
@@ -394,7 +405,7 @@
 
   .hover-brut {
     @apply transition-all duration-150
-           hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brut-md;
+           hover:-translate-y-0.5 hover:shadow-brut-md;
   }
 
   /* ── Scrollbar ────────────────────────────────────────────── */
@@ -440,7 +451,7 @@
 
   /* ── Pattern backgrounds ──────────────────────────────────── */
   .bg-dots {
-    background-image: radial-gradient(circle, #11111120 1px, transparent 1px);
+    background-image: radial-gradient(circle, #dcd6ea 1px, transparent 1px);
     background-size: 20px 20px;
   }
 
@@ -453,7 +464,7 @@
 
   /* ── Sticker / floating element helper ───────────────────── */
   .sticker {
-    @apply absolute z-10 rounded-xl border-2 border-surface-border
+    @apply absolute z-10 rounded-[8px] border border-surface-border
            bg-white shadow-brut-sm font-bold text-xs px-3 py-1.5
            pointer-events-none select-none;
   }
