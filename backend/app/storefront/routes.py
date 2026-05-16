@@ -69,7 +69,7 @@ async def generate_store(payload: GenerateStoreRequest):
 
 @router.post("/stores")
 async def post_store(payload: StoreCreateRequest, db: AsyncSession = Depends(get_db)):
-    user = await db.get(User, payload.user_id)
+    user = await db.get(User, UUID(payload.user_id))
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     # Enforce free plan store limit
@@ -122,7 +122,7 @@ async def get_store_by_user(user_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/products")
 async def post_product(payload: ProductCreateRequest, db: AsyncSession = Depends(get_db)):
-    store = await db.get(Store, payload.store_id)
+    store = await db.get(Store, UUID(payload.store_id))
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
     # Enforce product/service limits for free plan users
@@ -152,7 +152,7 @@ async def get_products(store_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/product/{product_id}")
 async def get_product(product_id: str, db: AsyncSession = Depends(get_db)):
-    product = await db.get(Product, product_id)
+    product = await db.get(Product, UUID(product_id))
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     return _product(product)
@@ -160,7 +160,7 @@ async def get_product(product_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.put("/products/{product_id}")
 async def update_product(product_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
-    product = await db.get(Product, product_id)
+    product = await db.get(Product, UUID(product_id))
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     for k, v in payload.items():
@@ -171,7 +171,7 @@ async def update_product(product_id: str, payload: dict, db: AsyncSession = Depe
 
 @router.delete("/products/{product_id}")
 async def delete_product(product_id: str, db: AsyncSession = Depends(get_db)):
-    product = await db.get(Product, product_id)
+    product = await db.get(Product, UUID(product_id))
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     product.is_active = False
@@ -180,7 +180,7 @@ async def delete_product(product_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/orders")
 async def post_order(payload: OrderCreateRequest, db: AsyncSession = Depends(get_db)):
-    store = await db.get(Store, payload.store_id)
+    store = await db.get(Store, UUID(payload.store_id))
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
     try:
@@ -198,7 +198,7 @@ async def get_orders(store_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/order/{order_id}")
 async def get_order(order_id: str, db: AsyncSession = Depends(get_db)):
-    order = await db.get(Order, order_id)
+    order = await db.get(Order, UUID(order_id))
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     data = _order(order)
@@ -223,7 +223,7 @@ async def get_order(order_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.put("/orders/{order_id}/status")
 async def update_order_status(order_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
-    order = await db.get(Order, order_id)
+    order = await db.get(Order, UUID(order_id))
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     previous_payment_status = order.payment_status
@@ -280,7 +280,7 @@ async def get_low_stock(store_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/inventory/adjust")
 async def adjust_inventory(payload: InventoryAdjustRequest, db: AsyncSession = Depends(get_db)):
-    product = await db.get(Product, payload.product_id)
+    product = await db.get(Product, UUID(payload.product_id))
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     store = await db.get(Store, product.store_id)
