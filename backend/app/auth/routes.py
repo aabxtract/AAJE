@@ -43,7 +43,8 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Phone number required")
 
     whatsapp_no = _normalize_whatsapp_number(payload.phone)
-    existing = (await db.execute(select(User).where(User.email == payload.email.lower()))).scalar_one_or_none()
+    email_clean = payload.email.strip().lower()
+    existing = (await db.execute(select(User).where(User.email == email_clean))).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=409, detail="Email already exists")
     existing_whatsapp = (await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))).scalar_one_or_none()
@@ -51,7 +52,7 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=409, detail="WhatsApp number already exists")
 
     user = User(
-        email=payload.email.lower(),
+        email=email_clean,
         password_hash=_hash_password(payload.password),
         full_name=payload.full_name,
         phone=payload.phone,
@@ -70,7 +71,8 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login")
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    user = (await db.execute(select(User).where(User.email == payload.email.lower()))).scalar_one_or_none()
+    email_clean = payload.email.strip().lower()
+    user = (await db.execute(select(User).where(User.email == email_clean))).scalar_one_or_none()
     if not user or not _verify_password(payload.password, user.password_hash or ""):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return {"token": _create_token(str(user.id)), "user": _user_payload(user)}
@@ -315,8 +317,8 @@ async def dummy_flow(wa: str):
 async def flow_submit(wa: str = Form(...), email: str = Form(...), password: str = Form(...), db: AsyncSession = Depends(get_db)):
     whatsapp_no = _normalize_whatsapp_number(wa)
     
-    # Check if a user with this email already exists
-    user = (await db.execute(select(User).where(User.email == email.lower()))).scalar_one_or_none()
+    email_clean = email.strip().lower()
+    user = (await db.execute(select(User).where(User.email == email_clean))).scalar_one_or_none()
     
     from app.models.commerce import Store
     store = None
@@ -347,7 +349,7 @@ async def flow_submit(wa: str = Form(...), email: str = Form(...), password: str
     else:
         # Create a new user
         user = User(
-            email=email.lower(),
+            email=email_clean,
             password_hash=_hash_password(password),
             whatsapp_no=whatsapp_no,
             phone=wa,
