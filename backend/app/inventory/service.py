@@ -7,6 +7,8 @@ from app.models import Product, InventoryMovement
 from app.whatsapp.service import send_text
 from app.models import Product as ProductModel
 from app.models import Store as StoreModel
+from app.models.user import User
+from app.whatsapp.recipients import seller_notification_recipients
 
 
 async def record_movement(
@@ -48,11 +50,10 @@ async def decrease_stock(session: AsyncSession, product_id: uuid.UUID, qty: int)
             # fetch store contact
             q = await session.execute(select(StoreModel).where(StoreModel.id == prod.store_id))
             store = q.scalar_one_or_none()
-            if store and store.contact_whatsapp:
-                await send_text(
-                    store.contact_whatsapp,
-                    f"Low stock alert - {prod.name}\nStock left: {prod.stock_quantity}\nReply *add stock {prod.name} 10* to update inventory.",
-                )
+            user = await session.get(User, store.user_id) if store else None
+            message = f"Low stock alert - {prod.name}\nStock left: {prod.stock_quantity}\nReply *add stock {prod.name} 10* to update inventory."
+            for recipient in seller_notification_recipients(user=user, store=store):
+                await send_text(recipient, message)
     except Exception:
         pass
     return prod

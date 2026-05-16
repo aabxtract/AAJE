@@ -31,8 +31,8 @@ export function AuthShell({ title, subtitle, children, footer }) {
         <section className="relative hidden overflow-hidden bg-[#5a4be7] lg:block">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_16%,rgba(255,255,255,0.18),transparent_30%)]" />
           <div className="relative z-10 flex h-full flex-col justify-between px-14 py-12 text-white">
-            <Link to="/" className="grid h-9 w-9 place-items-center rounded-[8px] bg-white/90 text-sm font-black text-[#5a4be7]">
-              A
+            <Link to="/" className="inline-flex items-center">
+              <img src="/IMG_5672.PNG" alt="AAJE" className="h-14" />
             </Link>
 
             <div className="max-w-xl">
@@ -94,8 +94,8 @@ export function AuthShell({ title, subtitle, children, footer }) {
 
         <section className="flex items-center justify-center px-5 py-10 sm:px-8">
           <div className="w-full max-w-md">
-            <Link to="/" className="mb-10 inline-flex text-sm font-black text-[#077ef6] lg:hidden">
-              AAJE
+            <Link to="/" className="mb-8 inline-flex">
+              <img src="/IMG_5672.PNG" alt="AAJE" className="h-20" />
             </Link>
             <h2 className="text-3xl font-semibold tracking-[-0.01em] text-[#12102b]">{title}</h2>
             {subtitle && <p className="mt-3 text-sm leading-6 text-[#74708a]">{subtitle}</p>}

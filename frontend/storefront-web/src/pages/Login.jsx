@@ -1,22 +1,15 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Loader2, Lock, Mail } from 'lucide-react'
-import { login } from '../lib/api'
+import { login, connectWhatsapp } from '../lib/api'
 import { AuthShell, GoogleAuthButton } from '../components/AuthShell'
 
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('aaje_user') || 'null')
-    if (user) {
-      if (user.onboarding_complete) navigate('/dashboard')
-      else navigate('/onboarding')
-    }
-  }, [navigate])
 
   function handleChange(event) {
     const { name, value } = event.target
@@ -41,6 +34,17 @@ export default function Login() {
       localStorage.setItem('aaje_user', JSON.stringify(user))
       localStorage.setItem('aaje_user_id', user.id)
 
+      const params = new URLSearchParams(location.search)
+      const wa = params.get('wa')
+      if (wa) {
+        localStorage.setItem('wa_redirect', 'true')
+        try {
+          await connectWhatsapp({ whatsapp_no: wa })
+        } catch (err) {
+          console.error('Failed to link WhatsApp during login', err)
+        }
+      }
+
       if (!user.onboarding_complete) {
         navigate('/onboarding')
       } else {
@@ -61,7 +65,7 @@ export default function Login() {
       footer={
         <>
           Don't have an account?{' '}
-          <Link to="/signup" className="font-bold text-[#2f22d8] hover:underline">
+          <Link to={`/signup${location.search}`} className="font-bold text-[#2f22d8] hover:underline">
             Sign up
           </Link>
         </>

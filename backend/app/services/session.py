@@ -1,10 +1,3 @@
-"""
-WhatsApp storefront operations router.
-
-This is a clean replacement for the old WhatsApp bot flow. It does not run AI
-reasoning, onboarding, vault flows, supplier payments, or chat-based banking.
-WhatsApp is only an operational extension of the AAJE storefront.
-"""
 from __future__ import annotations
 
 import re
@@ -23,7 +16,16 @@ from app.models.user import User
 from app.redis import clear_session, clear_state_history, get_session, save_session
 from app.services.flows import create_flow_session
 from app.storefront.service import create_product
+from app.whatsapp.recipients import normalize_whatsapp_number, seller_notification_recipients
 from app.whatsapp.service import send_text
+
+"""
+WhatsApp storefront operations router.
+
+This is a clean replacement for the old WhatsApp bot flow. It does not run AI
+reasoning, onboarding, vault flows, supplier payments, or chat-based banking.
+WhatsApp is only an operational extension of the AAJE storefront.
+"""
 
 RESET_COMMANDS = {"restart", "reset", "start over", "start again", "begin again"}
 BACK_COMMANDS = {"back", "undo", "go back", "previous", "prev", "return"}
@@ -45,14 +47,13 @@ HELP_TEXT = (
 )
 
 FREE_TEXT = (
-    "Free WhatsApp is enabled for storefront notifications and store link sharing.\n\n"
-    "Upgrade to Premium for operational chat: sales questions, inventory updates, order management, withdrawals, campaign analytics, and BizPrint."
+    "AAJE on WhatsApp is connected to your storefront.\n\n"
+    "Ask about sales, orders, inventory, products, fulfillment, your store link, or BizPrint."
 )
 
 NOT_CONNECTED_TEXT = (
-    "Connect WhatsApp from your AAJE dashboard first.\n\n"
-    "Open Dashboard > Storefront > WhatsApp, enter this number, and AAJE will send a test notification. "
-    "After that, this chat will handle storefront operations."
+    "Connect your AAJE account to use AAJE on WhatsApp.\n\n"
+    "After connecting, you can ask about sales, orders, inventory, and your storefront."
 )
 
 
@@ -67,8 +68,30 @@ async def route_message(whatsapp_no: str, message: str):
 
     async with AsyncSessionLocal() as db:
         user, store = await _connection(db, whatsapp_no)
-        if not user or not store:
-            await send_text(whatsapp_no, NOT_CONNECTED_TEXT)
+        if not user:
+            frontend = (settings.frontend_url or settings.app_public_url or "http://localhost:5173").rstrip("/")
+            url = f"{frontend}/signup?wa={normalize_whatsapp_number(whatsapp_no) or whatsapp_no}"
+            
+            try:
+                from app.whatsapp.service import send_cta_button
+                await send_cta_button(
+                    to=whatsapp_no,
+                    body=NOT_CONNECTED_TEXT,
+                    button_label="Connect AAJE",
+                    url=url
+                )
+            except Exception:
+                # Fallback if Meta credentials are not fully configured
+                await send_text(whatsapp_no, f"{NOT_CONNECTED_TEXT}\n\nLink: {url}")
+            return
+            
+        if not store:
+            frontend = (settings.frontend_url or "http://localhost:5173").rstrip("/")
+            await send_text(
+                whatsapp_no,
+                "Your AAJE account is connected. Create or publish a storefront from the web dashboard first."
+                f"\n\nLink: {frontend}/dashboard",
+            )
             return
 
         session = await get_session(whatsapp_no)
@@ -79,9 +102,9 @@ async def route_message(whatsapp_no: str, message: str):
             await send_text(whatsapp_no, _help_for(user))
             return
 
-        response = await _handle_store_operation(db, user, store, message)
+        reply = await _handle_store_operation(db, user, store, message)
         await db.commit()
-        await send_text(whatsapp_no, response)
+        await send_text(whatsapp_no, reply)
 
 
 async def route_flow_response(whatsapp_no: str, flow_response: dict):
@@ -95,17 +118,25 @@ async def route_flow_response(whatsapp_no: str, flow_response: dict):
 
 
 async def _connection(db, whatsapp_no: str) -> tuple[User | None, Store | None]:
-    user = (await db.execute(select(User).where(User.whatsapp_no == whatsapp_no))).scalar_one_or_none()
+    incoming = normalize_whatsapp_number(whatsapp_no) or whatsapp_no
+    user = (await db.execute(select(User).where(User.whatsapp_no == incoming))).scalar_one_or_none()
     if not user or not user.whatsapp_connected:
-        return user, None
+        demo_recipients = seller_notification_recipients()
+        if incoming not in demo_recipients:
+            return None, None
+        row = (await db.execute(
+            select(User, Store)
+            .join(Store, Store.user_id == User.id)
+            .where(User.whatsapp_connected.is_(True))
+            .order_by(Store.created_at.desc())
+        )).first()
+        return (row[0], row[1]) if row else (user, None)
     store = (await db.execute(select(Store).where(Store.user_id == user.id))).scalar_one_or_none()
-    if not store or store.contact_whatsapp != whatsapp_no:
+    if not store:
+        return user, None
+    if store.contact_whatsapp != incoming and incoming not in seller_notification_recipients(user=user, store=store):
         return user, None
     return user, store
-
-
-def _is_premium(user: User) -> bool:
-    return "premium" in (user.persona_mode or "").lower()
 
 
 def _is_help(message: str) -> bool:
@@ -114,7 +145,7 @@ def _is_help(message: str) -> bool:
 
 
 def _help_for(user: User) -> str:
-    return HELP_TEXT if _is_premium(user) else FREE_TEXT + "\n\nReply *store link* to share your storefront."
+    return HELP_TEXT
 
 
 async def _handle_store_operation(db, user: User, store: Store, message: str) -> str:
@@ -123,13 +154,11 @@ async def _handle_store_operation(db, user: User, store: Store, message: str) ->
     if "store link" in text or "send my store" in text or text.strip() in {"link", "my link"}:
         return f"Store link: {_store_link(store)}"
 
-    if not _is_premium(user):
-        return FREE_TEXT
-
     if "sold today" in text or "sales today" in text or ("today" in text and any(term in text for term in {"sales", "orders", "revenue", "sold"})):
         return await _today_sales(db, store)
     if "recent order" in text or text in {"orders", "show orders", "latest orders"}:
         return await _orders(db, store, pending_only=False)
+
     if "pending order" in text or "unfulfilled" in text:
         return await _orders(db, store, pending_only=True)
     if "low stock" in text or "low inventory" in text or "what is low" in text:
@@ -156,7 +185,7 @@ async def _handle_store_operation(db, user: User, store: Store, message: str) ->
 
 def _store_link(store: Store) -> str:
     base = (settings.frontend_url or settings.app_public_url or "").rstrip("/")
-    path = f"/{store.slug}"
+    path = f"/store/{store.slug}"
     return f"{base}{path}" if base else path
 
 
@@ -167,9 +196,30 @@ async def _today_sales(db, store: Store) -> str:
         .where(Order.store_id == store.id, Order.payment_status == "paid")
         .order_by(Order.created_at.desc())
     )).scalars().all()
-    paid_today = [order for order in orders if order.paid_at and order.paid_at.date() == today]
+    paid_today = [
+        order for order in orders
+        if (order.paid_at or order.updated_at or order.created_at)
+        and (order.paid_at or order.updated_at or order.created_at).date() == today
+    ]
+    if not paid_today:
+        return "You have not sold anything today yet."
     amount = sum(Decimal(order.total_amount or 0) for order in paid_today)
-    return f"Today: {len(paid_today)} paid order(s), NGN {float(amount):,.2f} revenue."
+    order_ids = [order.id for order in paid_today]
+    rows = (await db.execute(
+        select(
+            OrderItem.product_name,
+            func.coalesce(func.sum(OrderItem.quantity), 0).label("quantity"),
+            func.coalesce(func.sum(OrderItem.total_price), 0).label("revenue"),
+        )
+        .where(OrderItem.order_id.in_(order_ids))
+        .group_by(OrderItem.product_name)
+        .order_by(func.sum(OrderItem.quantity).desc())
+    )).all()
+    lines = ["You sold today:"]
+    for name, quantity, revenue in rows:
+        lines.append(f"- {name or 'Product'} x{int(quantity)} - NGN {float(revenue):,.2f}")
+    lines.append(f"Total sales: NGN {float(amount):,.2f}")
+    return "\n".join(lines)
 
 
 async def _orders(db, store: Store, pending_only: bool) -> str:

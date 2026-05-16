@@ -30,8 +30,13 @@ class StoreCreateRequest(BaseModel):
     slug: str | None = None
     tagline: str | None = None
     description: str | None = None
+    template: str | None = None
+    theme: str | None = None
+    categories: list[str] = []
+    config_json: dict | None = None
     theme_json: dict = {}
     starter_products: list[dict] = []
+    contact_whatsapp: str | None = None
     has_squad_account: bool = False
 
 
@@ -118,6 +123,31 @@ async def get_store(slug: str, ref: str | None = None, session_id: str | None = 
 async def get_store_by_user(user_id: str, db: AsyncSession = Depends(get_db)):
     stores = (await db.execute(select(Store).where(Store.user_id == UUID(user_id)))).scalars().all()
     return [_store(store) for store in stores]
+
+
+@router.put("/stores/{store_id}")
+async def update_store(store_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
+    store = await db.get(Store, store_id)
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    
+    # Update fields from payload
+    for k, v in payload.items():
+        if hasattr(store, k):
+            if k in ["contact_whatsapp", "whatsapp_number"] and v:
+                from app.auth.routes import _normalize_whatsapp_number
+                v = _normalize_whatsapp_number(v)
+            setattr(store, k, v)
+    
+    # Special handling for config_json if provided
+    if "categories" in payload or "template" in payload:
+        config = store.config_json or {}
+        if "categories" in payload: config["categories"] = payload["categories"]
+        if "template" in payload: config["template"] = payload["template"]
+        store.config_json = config
+
+    await db.flush()
+    return _store(store)
 
 
 @router.post("/products")
@@ -358,6 +388,7 @@ def _order(order: Order) -> dict:
         "order_status": order.order_status,
         "squad_payment_reference": order.squad_payment_reference,
         "campaign_ref": order.campaign_ref,
+        "paid_at": order.paid_at.isoformat() if order.paid_at else None,
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "updated_at": order.updated_at.isoformat() if order.updated_at else None,
     }

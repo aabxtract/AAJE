@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     app_public_url: str = ""
     frontend_url: str = ""
     whatsapp_bot_number: str = ""
+    whatsapp_registered_number: str = ""
+    whatsapp_registered_numbers: str = ""
+    whatsapp_demo_recipient: str = ""
+    whatsapp_test_recipients: str = ""
+    meta_test_recipient_whatsapp_no: str = ""
+    meta_test_recipient_whatsapp_nos: str = ""
 
     meta_app_id: str = ""
     meta_app_secret: str = ""

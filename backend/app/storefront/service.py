@@ -108,6 +108,68 @@ _TEMPLATE_TAGLINES: dict[str, str] = {
     "creator": "Quality work, every time.",
 }
 
+_LAYOUTS: dict[str, dict] = {
+    "catalog_powerhouse": {
+        "name": "Catalog Powerhouse",
+        "best_for": "stores with many categories and fast-moving stock",
+        "hero_style": "split_catalog",
+        "product_density": "high",
+    },
+    "premium_showroom": {
+        "name": "Premium Showroom",
+        "best_for": "high trust, high-ticket products",
+        "hero_style": "large_media",
+        "product_density": "medium",
+    },
+    "deal_stack": {
+        "name": "Deal Stack",
+        "best_for": "discounts, bundles, and impulse buys",
+        "hero_style": "offer_led",
+        "product_density": "high",
+    },
+    "service_booking": {
+        "name": "Service Booking",
+        "best_for": "creators, repairs, consultations, and appointments",
+        "hero_style": "booking_led",
+        "product_density": "low",
+    },
+    "local_market": {
+        "name": "Local Market",
+        "best_for": "food, provisions, fresh goods, and repeat orders",
+        "hero_style": "trust_led",
+        "product_density": "medium",
+    },
+}
+
+_RICH_PRODUCTS: dict[str, dict[str, list[dict]]] = {
+    "gadgets": {
+        "phones": [
+            {"name": "UK Used iPhone 13", "type": "product", "description": "Clean 128GB unit, Face ID working, battery health checked.", "category": "Phones", "price": 430000, "stock_quantity": 4, "low_stock_threshold": 1},
+            {"name": "Samsung Galaxy A15", "type": "product", "description": "Dual SIM Android phone with warranty-ready receipt.", "category": "Phones", "price": 185000, "stock_quantity": 6, "low_stock_threshold": 2},
+            {"name": "Oraimo Power Bank 20000mAh", "type": "product", "description": "Fast-charging backup power for daily Nigerian use.", "category": "Power", "price": 18500, "stock_quantity": 18, "low_stock_threshold": 4},
+            {"name": "AirPods Pro Grade A", "type": "product", "description": "Noise cancelling earbuds with MagSafe-style charging case.", "category": "Audio", "price": 45000, "stock_quantity": 10, "low_stock_threshold": 3},
+        ],
+        "pcs": [
+            {"name": "HP EliteBook 840 G5", "type": "product", "description": "Core i5, 8GB RAM, 256GB SSD, tested for office and school work.", "category": "Laptops", "price": 245000, "stock_quantity": 5, "low_stock_threshold": 1},
+            {"name": "Dell Latitude 7490", "type": "product", "description": "Business laptop with strong battery and clean keyboard.", "category": "Laptops", "price": 265000, "stock_quantity": 4, "low_stock_threshold": 1},
+            {"name": "Wireless Mouse + Keyboard Combo", "type": "product", "description": "Affordable desk setup bundle for students and remote workers.", "category": "Accessories", "price": 18000, "stock_quantity": 12, "low_stock_threshold": 3},
+            {"name": "Laptop Charger Replacement", "type": "product", "description": "Reliable replacement chargers for HP, Dell, and Lenovo laptops.", "category": "Power", "price": 15000, "stock_quantity": 15, "low_stock_threshold": 4},
+        ],
+        "repairs": [
+            {"name": "Phone Screen Replacement", "type": "service", "description": "Screen replacement service for popular iPhone and Android models.", "category": "Repairs", "price": 35000, "stock_quantity": 20, "low_stock_threshold": 3},
+            {"name": "Laptop Diagnosis", "type": "service", "description": "Hardware and software check with clear repair quote.", "category": "Repairs", "price": 10000, "stock_quantity": 25, "low_stock_threshold": 5},
+            {"name": "Data Recovery Service", "type": "service", "description": "Recover files from faulty drives, phones, and memory cards.", "category": "Services", "price": 25000, "stock_quantity": 10, "low_stock_threshold": 2},
+            {"name": "Tempered Glass Install", "type": "service", "description": "Quick screen protection installation for phones and tablets.", "category": "Accessories", "price": 3500, "stock_quantity": 40, "low_stock_threshold": 8},
+        ],
+        "general": [
+            {"name": "Fast USB-C Charger", "type": "product", "description": "Compact 30W fast charger for phones and accessories.", "category": "Accessories", "price": 12000, "stock_quantity": 20, "low_stock_threshold": 5},
+            {"name": "Bluetooth Speaker", "type": "product", "description": "Portable loud speaker for home, shop, and hangouts.", "category": "Audio", "price": 28000, "stock_quantity": 9, "low_stock_threshold": 2},
+            {"name": "Type-C Cable Pack", "type": "product", "description": "Durable fast-charge cable bundle for Android and modern devices.", "category": "Cables", "price": 6500, "stock_quantity": 35, "low_stock_threshold": 8},
+            {"name": "MagSafe Phone Case", "type": "product", "description": "Slim protective case with magnetic charging support.", "category": "Accessories", "price": 9500, "stock_quantity": 16, "low_stock_threshold": 4},
+        ],
+    },
+}
+
 
 def _detect_template(text: str) -> str:
     """Match business description keywords to a template name."""
@@ -121,22 +183,106 @@ def _detect_template(text: str) -> str:
     return best if scores[best] > 0 else "fashion"
 
 
+def _detect_focus(template: str, text: str) -> str:
+    lower = text.lower()
+    if template == "gadgets":
+        if any(word in lower for word in ["laptop", "pc", "computer", "desktop", "macbook"]):
+            return "pcs"
+        if any(word in lower for word in ["repair", "screen", "fix", "technician", "service"]):
+            return "repairs"
+        if any(word in lower for word in ["phone", "iphone", "samsung", "android"]):
+            return "phones"
+        return "general"
+    return "general"
+
+
+def _detect_layout(template: str, text: str, focus: str) -> str:
+    lower = text.lower()
+    if template == "creator" or focus == "repairs" or any(word in lower for word in ["service", "booking", "appointment", "repair"]):
+        return "service_booking"
+    if any(word in lower for word in ["premium", "luxury", "high ticket", "iphone", "macbook", "imported", "uk used"]):
+        return "premium_showroom"
+    if any(word in lower for word in ["deal", "discount", "bundle", "promo", "cheap", "affordable"]):
+        return "deal_stack"
+    if template == "food":
+        return "local_market"
+    return "catalog_powerhouse"
+
+
+def _store_name_from_description(description: str, template: str) -> str:
+    match = re.search(r"store name:\s*([^\n]+)", description, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()[:80]
+    words = [w.capitalize() for w in re.findall(r"[A-Za-z]+", description) if len(w) > 2]
+    if words:
+        return " ".join(words[:3])
+    return {
+        "gadgets": "AAJE Gadget Hub",
+        "fashion": "AAJE Fashion House",
+        "food": "AAJE Kitchen Market",
+        "creator": "AAJE Creator Studio",
+    }.get(template, "AAJE Store")
+
+
+def _categories_for(template: str, focus: str) -> list[str]:
+    if template == "gadgets":
+        return {
+            "phones": ["Phones", "Audio", "Power", "Accessories"],
+            "pcs": ["Laptops", "Accessories", "Power", "Repairs"],
+            "repairs": ["Repairs", "Services", "Accessories", "Diagnostics"],
+            "general": ["Accessories", "Audio", "Power", "Cables"],
+        }[focus]
+    return _TEMPLATE_CATEGORIES[template]
+
+
+def _products_for(template: str, focus: str) -> list[dict]:
+    if template in _RICH_PRODUCTS and focus in _RICH_PRODUCTS[template]:
+        return _RICH_PRODUCTS[template][focus]
+    return _STARTER_PRODUCTS[template]
+
+
+def _questions_for(template: str, focus: str) -> list[str]:
+    if template == "gadgets":
+        return [
+            "Do you sell mostly phones, laptops/PCs, accessories, or repair services?",
+            "Do you want customers to see warranty, condition, or delivery details on each product?",
+            "Upload or paste a display photo so the storefront hero can look like your real shop.",
+        ]
+    return [
+        "What product line should customers see first?",
+        "Do you have brand photos or a logo for the storefront hero?",
+        "Should the store feel premium, affordable, local, or playful?",
+    ]
+
+
 async def generate_store_blueprint(description: str) -> dict:
     """AI config generator: returns a StoreConfig JSON from a business prompt."""
     template = _detect_template(description)
-
-    # Extract a store name from the prompt
-    words = [w.capitalize() for w in re.findall(r"[A-Za-z]+", description) if len(w) > 2]
-    base_name = " ".join(words[:3]) if words else "AAJE Store"
+    focus = _detect_focus(template, description)
+    layout_key = _detect_layout(template, description, focus)
+    layout = _LAYOUTS[layout_key]
+    store_name = _store_name_from_description(description, template)
+    categories = _categories_for(template, focus)
+    products = _products_for(template, focus)
 
     return {
         "template": template,
+        "layout": layout_key,
+        "layout_config": layout,
+        "business_focus": focus,
         "theme": _TEMPLATE_THEMES[template],
-        "store_name": base_name,
+        "store_name": store_name,
         "tagline": _TEMPLATE_TAGLINES[template],
         "description": description,
-        "categories": _TEMPLATE_CATEGORIES[template],
-        "products": _STARTER_PRODUCTS[template],
+        "categories": categories,
+        "products": products,
+        "sections": [
+            {"type": "hero", "title": store_name, "style": layout["hero_style"]},
+            {"type": "category_rail", "title": "Shop by need", "items": categories},
+            {"type": "featured_products", "title": "Recommended for your customers"},
+            {"type": "trust_bar", "items": ["WhatsApp ordering", "Squad payments", "Inventory tracked"]},
+        ],
+        "ai_suggestions": _questions_for(template, focus),
     }
 
 

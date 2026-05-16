@@ -103,11 +103,20 @@ export function useDashboard(storeId) {
       .catch(() => setIntelligence(null))
   }, [storeId])
 
+  useEffect(() => {
+    if (!storeId) return undefined
+    const timer = window.setInterval(() => {
+      refreshProducts()
+      refreshOrders()
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [storeId, refreshProducts, refreshOrders])
+
   const stats = useMemo(() => {
     const today = new Date().toDateString()
     const paid = orders.filter((order) => order.payment_status === 'paid')
     const todaySales = paid
-      .filter((order) => new Date(order.created_at).toDateString() === today)
+      .filter((order) => new Date(order.paid_at || order.updated_at || order.created_at).toDateString() === today)
       .reduce((sum, order) => sum + Number(order.total_amount || 0), 0)
     const lowStock = products.filter((p) => Number(p.stock_quantity) <= Number(p.low_stock_threshold || 0))
 

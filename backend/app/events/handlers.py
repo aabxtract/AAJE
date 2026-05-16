@@ -14,6 +14,8 @@ from app.models.commerce import InventoryMovement, Order, OrderItem, Product, St
 from app.models.intelligence import Event, LedgerEntry
 from app.models.money import Wallet
 from app.models.notification_log import NotificationLog
+from app.models.user import User
+from app.whatsapp.recipients import seller_notification_recipients
 from app.models.transaction import Transaction
 from app.whatsapp.service import send_text
 
@@ -162,12 +164,18 @@ async def _record_payment_side_effects(db: AsyncSession, event: Event, payload: 
 
 
 async def _reduce_inventory_for_order(db: AsyncSession, order: Order) -> None:
+    store = await db.get(Store, order.store_id)
+    user = await db.get(User, order.user_id)
+    recipients = seller_notification_recipients(user=user, store=store)
+    reduced_lines: list[str] = []
+    low_lines: list[str] = []
     items = await db.execute(select(OrderItem).where(OrderItem.order_id == order.id))
     for item in items.scalars().all():
         product = await db.get(Product, item.product_id)
         if not product:
             continue
         product.stock_quantity = max((product.stock_quantity or 0) - item.quantity, 0)
+        reduced_lines.append(f"- {product.name}: -{item.quantity}, {product.stock_quantity} left")
         db.add(InventoryMovement(
             store_id=order.store_id,
             product_id=product.id,
@@ -187,6 +195,7 @@ async def _reduce_inventory_for_order(db: AsyncSession, order: Order) -> None:
             "metadata": {"product_name": product.name, "stock_quantity": product.stock_quantity},
         }, process_now=False)
         if product.stock_quantity <= (product.low_stock_threshold or 0):
+            low_lines.append(f"- {product.name}: {product.stock_quantity} left")
             await emit_event(db, {
                 "event_type": "inventory_low",
                 "source": "squad_intelligence",
@@ -195,6 +204,15 @@ async def _reduce_inventory_for_order(db: AsyncSession, order: Order) -> None:
                 "product_id": str(product.id),
                 "metadata": {"product_name": product.name, "stock_quantity": product.stock_quantity},
             }, process_now=False)
+    if recipients and reduced_lines:
+        message = "Inventory updated after paid order:\n" + "\n".join(reduced_lines)
+        if low_lines:
+            message += "\n\nLow stock:\n" + "\n".join(low_lines)
+        for recipient in recipients:
+            try:
+                await send_text(recipient, message)
+            except Exception:
+                logger.exception("Failed to send inventory update notification for order %s to %s", order.id, recipient)
 
 
 async def _refresh_intelligence(db: AsyncSession, user_id, store_id=None) -> None:
@@ -223,14 +241,24 @@ async def _credit_wallet(db: AsyncSession, user_id, amount: Decimal) -> Wallet:
 
 async def _notify_store_sale(db: AsyncSession, order: Order, amount: Decimal, reference: str) -> None:
     store = await db.get(Store, order.store_id)
-    if not store or not store.contact_whatsapp:
+    user = await db.get(User, order.user_id)
+    recipients = seller_notification_recipients(user=user, store=store)
+    if not store or not recipients:
         return
+    items = (await db.execute(
+        select(OrderItem, Product)
+        .outerjoin(Product, Product.id == OrderItem.product_id)
+        .where(OrderItem.order_id == order.id)
+    )).all()
+    product_lines = [
+        f"{item.product_name or (product.name if product else 'Product')} x{item.quantity}"
+        for item, product in items
+    ] or ["Paid storefront item"]
     message = (
-        f"New paid storefront order - {store.store_name}\n"
-        f"Order: {str(order.id)[:8]}\n"
-        f"Amount: NGN {float(amount):,.2f}\n"
-        f"Status: paid. Inventory has been updated.\n"
-        f"Ref: {reference}"
+        "New order received:\n"
+        + "\n".join(product_lines)
+        + f"\nNGN {float(amount):,.2f}\n\n"
+        "Payment succeeded. Inventory and dashboard are updated."
     )
     db.add(NotificationLog(
         user_id=order.user_id,
@@ -239,7 +267,8 @@ async def _notify_store_sale(db: AsyncSession, order: Order, amount: Decimal, re
         channel="whatsapp",
         status="queued",
     ))
-    try:
-        await send_text(store.contact_whatsapp, message)
-    except Exception:
-        logger.exception("Failed to send storefront sale notification for order %s", order.id)
+    for recipient in recipients:
+        try:
+            await send_text(recipient, message)
+        except Exception:
+            logger.exception("Failed to send storefront sale notification for order %s to %s", order.id, recipient)

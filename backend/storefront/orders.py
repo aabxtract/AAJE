@@ -1,5 +1,6 @@
 import uuid
 from typing import Any
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -8,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Order, OrderItem, Product, Store
+from app.models.user import User
+from app.whatsapp.recipients import seller_notification_recipients
 from .inventory import InventoryAdjustPayload, adjust_product_stock
 from .sync import emit_storefront_event
 
@@ -51,6 +54,7 @@ def serialize_order(order: Order, items: list[tuple[OrderItem, Product | None]] 
         "payment_status": order.payment_status,
         "order_status": order.order_status,
         "squad_payment_reference": order.squad_payment_reference,
+        "paid_at": order.paid_at.isoformat() if order.paid_at else None,
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "updated_at": order.updated_at.isoformat() if order.updated_at else None,
         "items": [
@@ -80,6 +84,7 @@ async def create_order(payload: OrderPayload, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=404, detail="Store not found")
     order = Order(
         store_id=store.id,
+        user_id=store.user_id,
         customer_name=payload.customer_name,
         customer_phone=payload.customer_phone,
         payment_status=payload.payment_status,
@@ -100,7 +105,15 @@ async def create_order(payload: OrderPayload, db: AsyncSession = Depends(get_db)
         unit_price = float(item.unit_price if item.unit_price is not None else product.price or 0)
         line_total = float(item.total_price if item.total_price is not None else unit_price * item.quantity)
         total += line_total
-        db.add(OrderItem(order_id=order.id, product_id=product.id, quantity=item.quantity, unit_price=unit_price, total_price=line_total))
+        db.add(OrderItem(
+            order_id=order.id,
+            product_id=product.id,
+            product_name=product.name,
+            quantity=item.quantity,
+            unit_price=unit_price,
+            total_price=line_total,
+            subtotal=line_total,
+        ))
     order.total_amount = payload.total_amount if payload.total_amount is not None else total
     await db.flush()
     await emit_storefront_event(db, "order_created", user_id=str(store.user_id), store_id=str(store.id), order_id=str(order.id), amount=float(order.total_amount or 0))
@@ -145,6 +158,7 @@ async def update_order_status(order_id: str, payload: OrderStatusPayload, db: As
         order.squad_payment_reference = payload.squad_payment_reference
 
     if previous_payment != "paid" and order.payment_status == "paid":
+        order.paid_at = datetime.now(timezone.utc)
         items = await _order_items(db, order.id)
         for item, product in items:
             if not product:
@@ -165,6 +179,27 @@ async def update_order_status(order_id: str, payload: OrderStatusPayload, db: As
                 await emit_storefront_event(db, "inventory_low", user_id=str(store.user_id) if store else None, store_id=str(order.store_id), product_id=str(product.id), product_name=product.name, category=product.category, quantity=product.stock_quantity)
         await emit_storefront_event(db, "payment_confirmed", user_id=str(store.user_id) if store else None, store_id=str(order.store_id), order_id=str(order.id), amount=float(order.total_amount or 0))
         await emit_storefront_event(db, "order_paid", user_id=str(store.user_id) if store else None, store_id=str(order.store_id), order_id=str(order.id), amount=float(order.total_amount or 0))
+        if store:
+            try:
+                from app.whatsapp.service import send_text
+                user = await db.get(User, store.user_id) if store.user_id else None
+                recipients = seller_notification_recipients(user=user, store=store)
+                if recipients:
+                    lines = [
+                        "New order received:",
+                        *[
+                            f"{product.name if product else 'Product'} x{item.quantity}"
+                            for item, product in items
+                        ],
+                        f"NGN {float(order.total_amount or 0):,.2f}",
+                        "",
+                        "Payment succeeded. Inventory and dashboard are updated.",
+                    ]
+                    message = "\n".join(lines)
+                    for recipient in recipients:
+                        await send_text(recipient, message)
+            except Exception:
+                pass
     elif order.order_status == "cancelled":
         await emit_storefront_event(db, "order_cancelled", user_id=str(store.user_id) if store else None, store_id=str(order.store_id), order_id=str(order.id), amount=float(order.total_amount or 0))
 

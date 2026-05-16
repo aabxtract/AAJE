@@ -10,6 +10,7 @@ from app.inventory.service import decrease_stock, record_movement
 from app.services import intelligence_sync
 from app.whatsapp.service import send_text
 from app.models.user import User
+from app.whatsapp.recipients import seller_notification_recipients
 from app.database import AsyncSession
 
 
@@ -103,15 +104,15 @@ async def mark_order_paid(session: AsyncSession, order_id: uuid.UUID, squad_ref:
         q = select(Store).where(Store.id == order.store_id)
         res = await session.execute(q)
         store = res.scalar_one_or_none()
-        if store and store.contact_whatsapp:
-            await send_text(
-                store.contact_whatsapp,
-                (
-                    f"New paid storefront order - {str(order.id)[:8]}\n"
-                    f"Amount: NGN {float(order.total_amount or 0):,.2f}\n"
-                    "Inventory has been updated."
-                ),
-            )
+        user = await session.get(User, store.user_id) if store else None
+        recipients = seller_notification_recipients(user=user, store=store)
+        message = (
+            f"New paid storefront order - {str(order.id)[:8]}\n"
+            f"Amount: NGN {float(order.total_amount or 0):,.2f}\n"
+            "Inventory has been updated."
+        )
+        for recipient in recipients:
+            await send_text(recipient, message)
     except Exception:
         pass
 
