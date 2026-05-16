@@ -112,7 +112,8 @@ async def record_campaign_event(
 
 @router.post("/campaigns", response_model=CampaignLinkResponse)
 async def create_campaign(payload: CampaignCreateRequest, db: AsyncSession = Depends(get_db)):
-    store = await db.get(Store, payload.store_id)
+    from uuid import UUID
+    store = await db.get(Store, UUID(payload.store_id))
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
 
@@ -175,7 +176,8 @@ async def track_campaign_event(payload: CampaignTrackRequest, db: AsyncSession =
 
 @router.get("/analytics/{store_id}")
 async def get_marketing_analytics(store_id: str, days: int | None = None, db: AsyncSession = Depends(get_db)):
-    campaigns = (await db.execute(select(CampaignLink).where(CampaignLink.store_id == store_id))).scalars().all()
+    from uuid import UUID
+    campaigns = (await db.execute(select(CampaignLink).where(CampaignLink.store_id == UUID(store_id)))).scalars().all()
     since = None
     if days and days > 0:
         since = datetime.now(timezone.utc) - timedelta(days=days)

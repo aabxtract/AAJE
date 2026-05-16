@@ -127,7 +127,7 @@ async def get_store_by_user(user_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.put("/stores/{store_id}")
 async def update_store(store_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
-    store = await db.get(Store, store_id)
+    store = await db.get(Store, UUID(store_id))
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
     
@@ -176,7 +176,7 @@ async def post_product(payload: ProductCreateRequest, db: AsyncSession = Depends
 
 @router.get("/products/{store_id}")
 async def get_products(store_id: str, db: AsyncSession = Depends(get_db)):
-    products = (await db.execute(select(Product).where(Product.store_id == store_id))).scalars().all()
+    products = (await db.execute(select(Product).where(Product.store_id == UUID(store_id)))).scalars().all()
     return [_product(product) for product in products]
 
 
@@ -222,7 +222,7 @@ async def post_order(payload: OrderCreateRequest, db: AsyncSession = Depends(get
 
 @router.get("/orders/{store_id}")
 async def get_orders(store_id: str, db: AsyncSession = Depends(get_db)):
-    orders = (await db.execute(select(Order).where(Order.store_id == store_id).order_by(Order.created_at.desc()))).scalars().all()
+    orders = (await db.execute(select(Order).where(Order.store_id == UUID(store_id)).order_by(Order.created_at.desc()))).scalars().all()
     return [_order(order) for order in orders]
 
 
@@ -287,7 +287,7 @@ async def update_order_status(order_id: str, payload: dict, db: AsyncSession = D
 
 @router.get("/inventory/{store_id}")
 async def get_inventory(store_id: str, db: AsyncSession = Depends(get_db)):
-    products = (await db.execute(select(Product).where(Product.store_id == store_id))).scalars().all()
+    products = (await db.execute(select(Product).where(Product.store_id == UUID(store_id)))).scalars().all()
     return [
         {
             **_product(product),
@@ -299,7 +299,7 @@ async def get_inventory(store_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/inventory/low-stock/{store_id}")
 async def get_low_stock(store_id: str, db: AsyncSession = Depends(get_db)):
-    products = (await db.execute(select(Product).where(Product.store_id == store_id))).scalars().all()
+    products = (await db.execute(select(Product).where(Product.store_id == UUID(store_id)))).scalars().all()
     low = [
         _product(p)
         for p in products
