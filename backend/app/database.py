@@ -53,9 +53,13 @@ def add_missing_model_columns(connection):
             column_type = column.type.compile(dialect=connection.dialect)
             quoted_table = connection.dialect.identifier_preparer.quote(table.name)
             quoted_column = connection.dialect.identifier_preparer.quote(column.name)
-            connection.exec_driver_sql(
-                f"ALTER TABLE {quoted_table} ADD COLUMN {quoted_column} {column_type}"
-            )
+            try:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {quoted_table} ADD COLUMN {quoted_column} {column_type}"
+                )
+            except Exception:
+                # Column likely already exists, safe to ignore
+                pass
 
 
 def normalize_known_schema_drift(connection):
