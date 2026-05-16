@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Check, Loader2, Store, Save, Building, CreditCard, ShieldCheck } from 'lucide-react'
-import { createStore, updateStore, updateUser } from '../../lib/api'
+import { createStore, updateStore, updateUser, connectWhatsapp, verifyWhatsappConnection } from '../../lib/api'
 import { generateSlug, getDemoUserId } from '../../lib/utils'
 import { useOwnerStore } from '../../hooks/useStorefront'
 import AdminLayout from '../../components/AdminLayout'
@@ -41,7 +41,7 @@ export default function StoreSetup() {
         contact_whatsapp: store.contact_whatsapp || '',
         business_category: store.config_json?.categories?.[0] || '',
         theme: store.theme || 'default',
-        template: store.template || 'fashion',
+        template: store.template || 'premium',
       })
     }
   }, [store])
@@ -179,15 +179,6 @@ export default function StoreSetup() {
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <label className="text-sm font-bold text-gray-700">WhatsApp Number</label>
-                  <input 
-                    className="rounded-lg border border-gray-200 px-4 py-2.5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition" 
-                    name="contact_whatsapp" 
-                    value={form.contact_whatsapp} 
-                    onChange={handleFormChange}
-                  />
-                </div>
-                <div className="grid gap-2">
                   <label className="text-sm font-bold text-gray-700">Business Category</label>
                   <input 
                     className="rounded-lg border border-gray-200 px-4 py-2.5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition" 
@@ -195,6 +186,45 @@ export default function StoreSetup() {
                     value={form.business_category} 
                     onChange={handleFormChange}
                   />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-gray-50">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">WhatsApp Bot Connection</h3>
+                    <p className="text-xs text-gray-500">Enable operational notifications and chat-based inventory management</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!form.contact_whatsapp) return alert('Enter a WhatsApp number first')
+                      setLoading(true)
+                      try {
+                        await connectWhatsapp({ whatsapp_no: form.contact_whatsapp })
+                        await verifyWhatsappConnection()
+                        alert('Verification message sent! Check your WhatsApp.')
+                      } catch (err) {
+                        alert('Failed to connect bot. Ensure credentials are set.')
+                      } finally {
+                        setLoading(false)
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition"
+                  >
+                    Test Connection
+                  </button>
+                </div>
+                <div className="grid gap-2">
+                  <label className="text-sm font-bold text-gray-700">WhatsApp Number</label>
+                  <input 
+                    className="rounded-lg border border-gray-200 px-4 py-2.5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition" 
+                    name="contact_whatsapp" 
+                    value={form.contact_whatsapp} 
+                    onChange={handleFormChange}
+                    placeholder="e.g. 08012345678"
+                  />
+                  <p className="text-[10px] text-gray-400">AAJE will notify this number about new orders and stock levels.</p>
                 </div>
               </div>
 
@@ -207,6 +237,7 @@ export default function StoreSetup() {
                     value={form.template} 
                     onChange={handleFormChange}
                   >
+                    <option value="premium">Premium Commerce (Modern)</option>
                     <option value="fashion">Fashion & Lifestyle</option>
                     <option value="gadgets">Tech & Gadgets</option>
                     <option value="food">Food & Drinks</option>

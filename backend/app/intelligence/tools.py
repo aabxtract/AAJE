@@ -44,10 +44,24 @@ async def get_pending_orders(db: AsyncSession, store_id: str):
 
 
 async def get_today_sales(db: AsyncSession, store_id: str):
+    from app.models.commerce import OrderItem
     today = datetime.now(timezone.utc).date()
     orders = await get_store_orders(db, store_id)
     paid = [order for order in orders if order.payment_status == "paid" and order.paid_at and order.paid_at.date() == today]
-    return {"count": len(paid), "amount": float(sum(order.total_amount or 0 for order in paid))}
+    
+    total_amount = float(sum(order.total_amount or 0 for order in paid))
+    
+    items_data = []
+    order_ids = [order.id for order in paid]
+    if order_ids:
+        items = (await db.execute(select(OrderItem).where(OrderItem.order_id.in_(order_ids)))).scalars().all()
+        summary = {}
+        for item in items:
+            name = item.product_name or "Unknown Product"
+            summary[name] = summary.get(name, 0) + item.quantity
+        items_data = [{"name": name, "quantity": qty} for name, qty in summary.items()]
+        
+    return {"count": len(paid), "amount": total_amount, "items": items_data}
 
 
 async def get_low_stock_products(db: AsyncSession, store_id: str):
@@ -181,8 +195,12 @@ async def mark_order_fulfilled_from_chat(db: AsyncSession, store_id: str, messag
 
 async def generate_store_insight(db: AsyncSession, store_id: str):
     sales = await get_today_sales(db, store_id)
-    low_stock = await get_low_stock_products(db, store_id)
-    return f"Today you have {sales['count']} paid order(s) worth NGN {sales['amount']:,.2f}. {len(low_stock)} product(s) are low in stock."
+    
+    if sales['count'] == 0:
+        return "You haven't made any sales today yet. Share your store link to get started!"
+        
+    items_text = "\n".join([f"- {item['name']} ×{item['quantity']}" for item in sales['items']])
+    return f"You sold:\n{items_text}\nTotal sales: ₦{sales['amount']:,.2f}"
 
 
 async def _product_from_message(db: AsyncSession, store_id: str, message: str) -> Product | None:

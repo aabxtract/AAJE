@@ -16,7 +16,9 @@ api.interceptors.request.use((config) => {
 // Auth
 export const signup = (data) => api.post('/auth/signup', data)
 export const login = (data) => api.post('/auth/login', data)
+export const whatsappLogin = (data) => api.post('/auth/whatsapp-login', data)
 export const connectWhatsapp = (data) => api.post('/auth/connect-whatsapp', data)
+export const verifyWhatsappConnection = () => api.post('/auth/verify-whatsapp-connection')
 export const updateUser = (data) => api.post('/auth/update-me', data)
 
 // AI Store Generation

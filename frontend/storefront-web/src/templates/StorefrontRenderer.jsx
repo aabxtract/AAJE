@@ -1,11 +1,8 @@
-import FashionTemplate from './FashionTemplate'
-import GadgetsTemplate from './GadgetsTemplate'
-import FoodTemplate from './FoodTemplate'
-import CreatorTemplate from './CreatorTemplate'
+import UniversalStorefront from './UniversalStorefront'
 
 /**
- * StorefrontRenderer — picks the correct template based on config.template
- * and passes through all props (config, products, onSelect, onShare).
+ * StorefrontRenderer — Routes all template types through the UniversalStorefront engine.
+ * The engine reads the template config from templateRegistry.js and adapts accordingly.
  */
 export default function StorefrontRenderer({ config, products, onSelect, onShare }) {
   const safeConfig = {
@@ -13,19 +10,15 @@ export default function StorefrontRenderer({ config, products, onSelect, onShare
     store_name: config.store_name || 'My Store',
     categories: config.categories || [],
     products: config.products || [],
+    template: config.template || 'premium',
   }
 
-  const props = { config: safeConfig, products, onSelect, onShare }
-
-  switch (config.template) {
-    case 'gadgets':
-      return <GadgetsTemplate {...props} />
-    case 'food':
-      return <FoodTemplate {...props} />
-    case 'creator':
-      return <CreatorTemplate {...props} />
-    case 'fashion':
-    default:
-      return <FashionTemplate {...props} />
-  }
+  return (
+    <UniversalStorefront
+      config={safeConfig}
+      products={products}
+      onSelect={onSelect}
+      onShare={onShare}
+    />
+  )
 }
