@@ -157,6 +157,21 @@ async def set_rate_limit(whatsapp_no: str) -> int:
     return count
 
 
+async def set_whatsapp_otp(user_id: str, whatsapp_no: str, otp: str) -> None:
+    await _setex(f"whatsapp_otp:{user_id}:{whatsapp_no}", 600, otp)
+
+
+async def get_whatsapp_otp(user_id: str, whatsapp_no: str) -> str | None:
+    value = await _get(f"whatsapp_otp:{user_id}:{whatsapp_no}")
+    if value is None:
+        return None
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
+async def clear_whatsapp_otp(user_id: str, whatsapp_no: str) -> None:
+    await _delete(f"whatsapp_otp:{user_id}:{whatsapp_no}")
+
+
 MAX_HISTORY_DEPTH = 10
 _HISTORY_TTL = 1800
 

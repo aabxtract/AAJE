@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AAJE — Build your store</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #064E3B 0%, #0F766E 100%);
+    min-height: 100vh;
+    color: #1F2937;
+    line-height: 1.5;
+  }
+  .container {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 48px 24px;
+  }
+  .brand {
+    color: white;
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .brand h1 { font-size: 36px; letter-spacing: -0.02em; }
+  .brand p { font-size: 16px; opacity: 0.9; margin-top: 8px; }
+  .card {
+    background: white;
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+  }
+  h2 { font-size: 22px; margin-bottom: 8px; color: #064E3B; }
+  .subtitle { color: #6B7280; margin-bottom: 24px; font-size: 14px; }
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 6px;
+    margin-top: 16px;
+  }
+  input, textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1.5px solid #E5E7EB;
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    transition: border-color 0.15s;
+  }
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: #0F766E;
+  }
+  textarea {
+    min-height: 120px;
+    resize: vertical;
+  }
+  .hint {
+    font-size: 12px;
+    color: #9CA3AF;
+    margin-top: 4px;
+  }
+  button {
+    width: 100%;
+    padding: 14px;
+    background: #0F766E;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 24px;
+    transition: background 0.15s;
+  }
+  button:hover { background: #064E3B; }
+  button:disabled { background: #9CA3AF; cursor: not-allowed; }
+  .error {
+    background: #FEE2E2;
+    color: #991B1B;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-top: 16px;
+  }
+  .loading {
+    display: none;
+    text-align: center;
+    padding: 40px 20px;
+  }
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #E5E7EB;
+    border-top-color: #0F766E;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading p { color: #6B7280; font-size: 15px; }
+  .loading-msg {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #9CA3AF;
+    font-style: italic;
+  }
+  .result {
+    display: none;
+    text-align: center;
+  }
+  .result h2 { color: #064E3B; margin-bottom: 16px; }
+  .store-link {
+    background: #F0FDF4;
+    border: 2px dashed #10B981;
+    padding: 16px;
+    border-radius: 8px;
+    margin: 20px 0;
+    word-break: break-all;
+  }
+  .store-link a {
+    color: #047857;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 15px;
+  }
+  .products {
+    text-align: left;
+    margin: 24px 0;
+    border-top: 1px solid #E5E7EB;
+    padding-top: 20px;
+  }
+  .products h3 { font-size: 14px; color: #6B7280; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .product {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #F3F4F6;
+    font-size: 14px;
+  }
+  .product:last-child { border-bottom: none; }
+  .product-name { color: #1F2937; font-weight: 500; }
+  .product-price { color: #0F766E; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="brand">
+    <h1>AAJE</h1>
+    <p>Your store. Your orders. Your money. One WhatsApp chat.</p>
+  </div>
+
+  <div class="card">
+    <div id="form-view">
+      <h2>Build your store</h2>
+      <p class="subtitle">Tell us what you sell. Our AI builds your live storefront in seconds.</p>
+
+      <form id="signup-form" novalidate>
+        <label for="full_name">Your full name</label>
+        <input type="text" id="full_name" name="full_name" required maxlength="100" autocomplete="name" />
+
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required autocomplete="email" />
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required minlength="8" maxlength="128" autocomplete="new-password" />
+        <div class="hint">At least 8 characters</div>
+
+        <label for="business_description">Tell us about your business</label>
+        <textarea
+          id="business_description"
+          name="business_description"
+          required
+          minlength="10"
+          maxlength="2000"
+          placeholder="e.g. I sell ankara fabric ₦2,500 per yard, ready-made dresses ₦8,000, head ties ₦1,500. I also do custom orders."></textarea>
+        <div class="hint">Mention your products and prices — the AI will extract them.</div>
+
+        <button type="submit" id="submit-btn">Build My Store</button>
+        <div id="error" class="error" style="display: none;"></div>
+      </form>
+    </div>
+
+    <div id="loading-view" class="loading">
+      <div class="spinner"></div>
+      <p><strong>Our AI is building your store...</strong></p>
+      <p class="loading-msg" id="loading-msg">Reading your business description</p>
+    </div>
+
+    <div id="result-view" class="result">
+      <h2>✨ Your store is live!</h2>
+      <p class="subtitle" id="result-subtitle">Welcome to AAJE.</p>
+      <div class="store-link">
+        <div style="font-size: 12px; color: #6B7280; margin-bottom: 4px;">SHARE THIS LINK</div>
+        <a id="store-url" href="#" target="_blank"></a>
+      </div>
+      <div class="products" id="products-list"></div>
+      <button onclick="window.location.href = document.getElementById('store-url').href">
+        View My Store
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = window.AAJE_API_BASE || (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+  ? "http://localhost:8000"
+  : window.location.origin);
+
+const form = document.getElementById("signup-form");
+const errorEl = document.getElementById("error");
+const formView = document.getElementById("form-view");
+const loadingView = document.getElementById("loading-view");
+const resultView = document.getElementById("result-view");
+const loadingMsg = document.getElementById("loading-msg");
+
+const loadingMessages = [
+  "Reading your business description",
+  "Choosing your store name",
+  "Designing your store layout",
+  "Extracting your products",
+  "Finalizing your storefront",
+];
+
+function showError(msg) {
+  errorEl.textContent = msg;
+  errorEl.style.display = "block";
+}
+
+function clearError() {
+  errorEl.style.display = "none";
+  errorEl.textContent = "";
+}
+
+function showLoading() {
+  formView.style.display = "none";
+  loadingView.style.display = "block";
+  resultView.style.display = "none";
+
+  let i = 0;
+  return setInterval(() => {
+    i = (i + 1) % loadingMessages.length;
+    loadingMsg.textContent = loadingMessages[i];
+  }, 1500);
+}
+
+function showResult(store) {
+  formView.style.display = "none";
+  loadingView.style.display = "none";
+  resultView.style.display = "block";
+
+  document.getElementById("result-subtitle").textContent =
+    store.store_name + " — " + (store.store_description || "");
+
+  const storeUrl = document.getElementById("store-url");
+  const publicUrl = store.public_url || `${window.location.origin}/store.html?slug=${store.store_slug}`;
+  storeUrl.href = publicUrl;
+  storeUrl.textContent = publicUrl;
+
+  const productsList = document.getElementById("products-list");
+  if (store.products && store.products.length > 0) {
+    productsList.innerHTML = "<h3>Products extracted</h3>" + store.products.map(p =>
+      `<div class="product"><span class="product-name">${escapeHtml(p.name)}</span><span class="product-price">₦${Number(p.price).toLocaleString()}</span></div>`
+    ).join("");
+  } else {
+    productsList.innerHTML = "<h3>Add products from your WhatsApp</h3><p style='font-size:13px;color:#6B7280;'>The AI did not detect specific products. You can add them via WhatsApp or your dashboard.</p>";
+  }
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
+async function apiPost(path, body, token) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = "Bearer " + token;
+  const res = await fetch(API_BASE + path, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data.detail || `Request failed (${res.status})`;
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+  return data;
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearError();
+
+  const payload = {
+    full_name: document.getElementById("full_name").value.trim(),
+    email: document.getElementById("email").value.trim(),
+    password: document.getElementById("password").value,
+  };
+  const businessDescription = document.getElementById("business_description").value.trim();
+
+  if (!payload.full_name || !payload.email || payload.password.length < 8 || businessDescription.length < 10) {
+    showError("Please fill all fields. Password must be at least 8 chars. Description at least 10.");
+    return;
+  }
+
+  const submitBtn = document.getElementById("submit-btn");
+  submitBtn.disabled = true;
+  const tick = showLoading();
+
+  try {
+    const auth = await apiPost("/auth/signup", payload);
+    localStorage.setItem("aaje_token", auth.access_token);
+    localStorage.setItem("aaje_user", JSON.stringify(auth.user));
+
+    const store = await apiPost("/store/setup", { business_description: businessDescription }, auth.access_token);
+    clearInterval(tick);
+    showResult(store);
+  } catch (err) {
+    clearInterval(tick);
+    formView.style.display = "block";
+    loadingView.style.display = "none";
+    submitBtn.disabled = false;
+    showError(err.message || "Something went wrong. Please try again.");
+  }
+});
+</script>
+</body>
+</html>

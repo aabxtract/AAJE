@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AAJE Store</title>
+<style>
+  :root {
+    --primary: #0F766E;
+    --accent: #F59E0B;
+    --hero-text: "Welcome";
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #F9FAFB;
+    color: #1F2937;
+    line-height: 1.5;
+  }
+  .hero {
+    background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 70%, black) 100%);
+    color: white;
+    padding: 48px 24px;
+    text-align: center;
+  }
+  .hero h1 { font-size: 32px; letter-spacing: -0.02em; margin-bottom: 8px; }
+  .hero p { font-size: 16px; opacity: 0.9; max-width: 600px; margin: 0 auto; }
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 20px;
+  }
+  .loading, .error-state {
+    text-align: center;
+    padding: 80px 20px;
+    color: #6B7280;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 20px;
+  }
+  .product-card {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border: 1px solid #E5E7EB;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .product-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.08);
+  }
+  .product-image {
+    width: 100%;
+    aspect-ratio: 1;
+    background: #F3F4F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9CA3AF;
+    font-size: 14px;
+    background-size: cover;
+    background-position: center;
+  }
+  .product-body { padding: 16px; }
+  .product-name {
+    font-weight: 600;
+    color: #1F2937;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+  .product-desc {
+    font-size: 13px;
+    color: #6B7280;
+    margin-bottom: 10px;
+    min-height: 36px;
+  }
+  .product-price {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 12px;
+  }
+  .order-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #1F2937;
+    border: none;
+    padding: 10px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+    transition: opacity 0.15s;
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+  }
+  .order-btn:hover { opacity: 0.85; }
+  .empty {
+    background: white;
+    border-radius: 12px;
+    padding: 60px 20px;
+    text-align: center;
+    color: #6B7280;
+    border: 1px dashed #D1D5DB;
+  }
+  footer {
+    text-align: center;
+    color: #9CA3AF;
+    font-size: 13px;
+    padding: 40px 20px;
+  }
+  footer a { color: var(--primary); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div id="hero" class="hero" style="display: none;">
+  <h1 id="store-name"></h1>
+  <p id="store-description"></p>
+</div>
+
+<div class="container">
+  <div id="loading" class="loading">
+    <p>Loading store…</p>
+  </div>
+  <div id="error-state" class="error-state" style="display: none;">
+    <h2 style="color:#1F2937;">Store not found</h2>
+    <p style="margin-top:8px;">This store does not exist or is no longer active.</p>
+  </div>
+  <div id="content" style="display: none;">
+    <div id="product-grid" class="grid"></div>
+    <div id="empty" class="empty" style="display: none;">
+      <p>This store has no products yet. Check back soon!</p>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Powered by <a href="/signup.html">AAJE</a>
+</footer>
+
+<script>
+const API_BASE = window.AAJE_API_BASE || (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+  ? "http://localhost:8000"
+  : window.location.origin);
+
+function getSlug() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("slug")) return params.get("slug");
+  const match = window.location.pathname.match(/\/store\/([^\/?#]+)/);
+  return match ? match[1] : null;
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
+function applyTheme(theme) {
+  if (!theme) return;
+  if (theme.primary_color) document.documentElement.style.setProperty("--primary", theme.primary_color);
+  if (theme.accent_color) document.documentElement.style.setProperty("--accent", theme.accent_color);
+}
+
+function whatsappLink(number, productName, price) {
+  const clean = String(number || "").replace(/\D/g, "");
+  const msg = encodeURIComponent(`Hi, I want to order ${productName} for ₦${Number(price).toLocaleString()}.`);
+  return `https://wa.me/${clean}?text=${msg}`;
+}
+
+function renderProducts(store) {
+  const grid = document.getElementById("product-grid");
+  const empty = document.getElementById("empty");
+  const products = store.products || [];
+
+  if (products.length === 0) {
+    empty.style.display = "block";
+    grid.style.display = "none";
+    return;
+  }
+
+  grid.innerHTML = products.map(p => {
+    const link = store.whatsapp_number
+      ? whatsappLink(store.whatsapp_number, p.name, p.price)
+      : `mailto:?subject=Order: ${encodeURIComponent(p.name)}`;
+    const imageBg = p.image_url
+      ? `style="background-image: url('${escapeHtml(p.image_url)}');"`
+      : "";
+    return `
+      <div class="product-card">
+        <div class="product-image" ${imageBg}>${p.image_url ? "" : "No image"}</div>
+        <div class="product-body">
+          <div class="product-name">${escapeHtml(p.name)}</div>
+          <div class="product-desc">${escapeHtml(p.description || "")}</div>
+          <div class="product-price">₦${Number(p.price).toLocaleString()}</div>
+          <a class="order-btn" href="${link}" target="_blank" rel="noopener">Order on WhatsApp</a>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function load() {
+  const slug = getSlug();
+  if (!slug) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("error-state").style.display = "block";
+    return;
+  }
+
+  try {
+    const res = await fetch(API_BASE + "/store/" + encodeURIComponent(slug));
+    if (!res.ok) throw new Error("not found");
+    const store = await res.json();
+
+    applyTheme(store.theme_config);
+
+    document.getElementById("store-name").textContent = store.store_name;
+    document.getElementById("store-description").textContent =
+      (store.theme_config && store.theme_config.hero_text) || store.store_description || "";
+    document.getElementById("hero").style.display = "block";
+
+    renderProducts(store);
+
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("content").style.display = "block";
+  } catch (err) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("error-state").style.display = "block";
+  }
+}
+
+load();
+</script>
+</body>
+</html>

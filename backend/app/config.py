@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     upstash_redis_rest_token: str = ""
 
     groq_api_key: str = ""
+    llm_provider: str = "groq"
     admin_token: str = "dev-admin-token"
     secret_key: str = "dev-secret-key"
     jwt_secret: str = ""
