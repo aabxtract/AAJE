@@ -4,9 +4,9 @@ from decimal import Decimal
 
 from app.database import engine, Base, AsyncSessionLocal
 from app.models.user import User
-from app.services.ai_store_builder import generate_store_payload, create_store
-from app.services.product_service import create_product, list_products
-from app.services.order_service import create_order, mark_order_paid
+from app.storefront.ai_builder import generate_store_payload, create_store
+from app.products.service import create_product, list_products
+from app.orders.service import create_order, mark_order_paid
 from app.services.squad_payment_service import create_payment_link
 
 

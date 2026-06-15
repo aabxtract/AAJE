@@ -14,4 +14,5 @@ class OrderItem(Base):
     product_name = Column(String(200), nullable=False)
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Numeric(12, 2), nullable=False)
+    total_price = Column(Numeric(12, 2), nullable=False)
     subtotal = Column(Numeric(12, 2), nullable=False)
