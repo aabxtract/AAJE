@@ -83,6 +83,7 @@ async def _signup(client):
         "email": f"onboard-{uuid.uuid4().hex[:8]}@example.com",
         "password": "smoke-test-pass",
         "full_name": "Onboarding Tester",
+        "phone": "+2348031234567",
     }
     r = await client.post("/auth/signup", json=payload)
     if r.status_code != 200:
