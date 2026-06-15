@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
 
 from app.database import get_db
 from app.models.commerce import Store
@@ -29,8 +30,8 @@ async def send_whatsapp(payload: SendRequest):
 
 @router.post("/connect-storefront")
 async def connect_storefront(payload: ConnectStorefrontRequest, db: AsyncSession = Depends(get_db)):
-    user = await db.get(User, payload.user_id)
-    store = await db.get(Store, payload.store_id)
+    user = await db.get(User, UUID(payload.user_id))
+    store = await db.get(Store, UUID(payload.store_id))
     if not user or not store or store.user_id != user.id:
         raise HTTPException(status_code=404, detail="User/store connection not found")
 
