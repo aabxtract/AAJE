@@ -9,6 +9,8 @@ from app.models.supplier import Supplier
 from app.models.bank_account import BankAccount
 from app.models.bizprint import BizPrint
 from app.models.notification_log import NotificationLog
+from app.models.customer import Customer
+from app.models.inventory_movement import InventoryMovement
 
 __all__ = [
     "User",
@@ -22,4 +24,6 @@ __all__ = [
     "BankAccount",
     "BizPrint",
     "NotificationLog",
+    "Customer",
+    "InventoryMovement",
 ]

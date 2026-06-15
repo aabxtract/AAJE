@@ -3,16 +3,43 @@ import * as api from '../lib/api'
 import { getDemoUserId } from '../lib/utils'
 
 export function useOwnerStore() {
-  const [store, setStore] = useState(null)
+  const [store, setStore] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('aaje_store') || 'null')
+      return stored ? api.adaptStore(stored, getDemoUserId()) : null
+    } catch {
+      return null
+    }
+  })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const res = await api.getStoresByUser(getDemoUserId())
       const ownerStore = res.data?.[0] || null
-      setStore(ownerStore)
-      if (ownerStore) localStorage.setItem('aaje_store', JSON.stringify(ownerStore))
+      if (ownerStore) {
+        setStore(ownerStore)
+        localStorage.setItem('aaje_store', JSON.stringify(ownerStore))
+      } else {
+        setStore(null)
+        localStorage.removeItem('aaje_store')
+      }
+    } catch (err) {
+      const stored = (() => {
+        try {
+          const raw = JSON.parse(localStorage.getItem('aaje_store') || 'null')
+          return raw ? api.adaptStore(raw, getDemoUserId()) : null
+        } catch {
+          return null
+        }
+      })()
+      if (stored) {
+        setStore(stored)
+      }
+      setError(err)
     } finally {
       setLoading(false)
     }
@@ -22,7 +49,7 @@ export function useOwnerStore() {
     refresh()
   }, [refresh])
 
-  return { store, loading, refresh, setStore }
+  return { store, loading, error, refresh, setStore }
 }
 
 export function useProducts(storeId) {

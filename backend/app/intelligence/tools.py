@@ -1,313 +1,379 @@
-from datetime import datetime, timezone
-from decimal import Decimal
-import re
+"""Agent tools — CLAUDE.md §8.
+
+Five tools exposed to the LLM for MVP. The LLM (call 1) selects one; the
+backend executes it; the result is fed back into LLM call 2 for response
+generation.
+
+``add_product`` and ``initiate_withdrawal`` are kept dispatchable (in case
+the keyword fallback routes there) but intentionally NOT in
+``TOOL_DEFINITIONS`` — so the LLM doesn't offer features the MVP doesn't
+have. They return a "coming soon" payload instead of touching the DB.
+
+Every tool returns a structured dict that is JSON-serialisable. Tools NEVER
+raise out — they catch and return ``{"error": "..."}``. The agent loop relies
+on this contract.
+"""
+from __future__ import annotations
+
+import logging
+from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.commerce import Order, Product, Store
-from app.models.intelligence import BizPrintSnapshot
-from app.events.handlers import emit_event
-from app.services.flows import create_flow_session
-from app.storefront.service import create_product
+from app.config import settings
+from app.models.bizprint import BizPrint
+from app.models.order import Order
+from app.models.order_item import OrderItem
+from app.models.product import Product
+from app.models.store import Store
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.wallet import Wallet
+
+logger = logging.getLogger(__name__)
 
 
-async def get_store_by_user(db: AsyncSession, user_id: str):
-    return (await db.execute(select(Store).where(Store.user_id == user_id))).scalar_one_or_none()
+TOOL_DEFINITIONS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_store_summary",
+            "description": (
+                "Get today's snapshot for the trader's store: today's order count, "
+                "today's revenue, pending orders count, and top-selling product. "
+                "Call when the trader asks how their business is going, summary, performance."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_wallet_balance",
+            "description": (
+                "Get trader's wallet: available_balance, total_earned, recent transactions. "
+                "Call when trader asks about money, balance, earnings, wallet."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_orders",
+            "description": (
+                "List trader's orders. Call when trader wants to see their orders. "
+                "Filter by status if specified."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "transfer_claimed",
+                            "confirmed",
+                            "rejected",
+                            "delivered",
+                            "cancelled",
+                            "all",
+                        ],
+                        "description": "Order status filter. Default 'all'.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max orders to return. Default 5.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_bizprint",
+            "description": (
+                "Get trader's BizPrint financial identity score: score, grade, "
+                "component breakdown, loan eligibility ceiling. "
+                "Call when trader asks about BizPrint, credit, score, loan eligibility."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_store_link",
+            "description": (
+                "Return the trader's public storefront URL for sharing with customers."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+]
 
 
-async def get_store_orders(db: AsyncSession, store_id: str):
-    return (await db.execute(select(Order).where(Order.store_id == store_id).order_by(Order.created_at.desc()))).scalars().all()
+async def execute_tool(
+    name: str, arguments: dict, *, db: AsyncSession, user: User
+) -> dict:
+    """Dispatch a tool by name. Always returns a dict, never raises."""
+    try:
+        if name == "get_store_summary":
+            return await _get_store_summary(db, user)
+        if name == "get_wallet_balance":
+            return await _get_wallet_balance(db, user)
+        if name == "get_orders":
+            return await _get_orders(
+                db, user,
+                status=arguments.get("status") or "all",
+                limit=int(arguments.get("limit") or 5),
+            )
+        if name == "add_product":
+            return await _add_product(
+                db, user,
+                name=str(arguments.get("name") or "").strip(),
+                price=arguments.get("price"),
+                category=arguments.get("category"),
+            )
+        if name == "get_bizprint":
+            return await _get_bizprint(db, user)
+        if name == "initiate_withdrawal":
+            return await _initiate_withdrawal(
+                db, user, amount=arguments.get("amount"),
+            )
+        if name == "get_store_link":
+            return await _get_store_link(db, user)
+        return {"error": f"Unknown tool: {name}"}
+    except Exception:
+        logger.exception("Tool %s failed", name)
+        return {"error": "Tool execution failed", "tool": name}
 
 
-def _order_payload(order: Order) -> dict:
+async def _get_store(db: AsyncSession, user: User) -> Store | None:
+    return (
+        await db.execute(select(Store).where(Store.user_id == user.id))
+    ).scalar_one_or_none()
+
+
+async def _get_store_summary(db: AsyncSession, user: User) -> dict:
+    store = await _get_store(db, user)
+    if not store:
+        return {"error": "no_store", "message": "Trader has no store yet"}
+
+    from datetime import date
+
+    today_orders = (
+        await db.scalar(
+            select(func.count(Order.id)).where(
+                Order.store_id == store.id,
+                func.date(Order.created_at) == date.today(),
+            )
+        )
+    ) or 0
+    today_revenue = (
+        await db.scalar(
+            select(func.coalesce(func.sum(Order.total_amount), 0)).where(
+                Order.store_id == store.id,
+                Order.payment_status == "paid",
+                func.date(Order.created_at) == date.today(),
+            )
+        )
+    ) or 0
+    pending = (
+        await db.scalar(
+            select(func.count(Order.id)).where(
+                Order.store_id == store.id, Order.status == "pending"
+            )
+        )
+    ) or 0
+
+    top_row = (
+        await db.execute(
+            select(
+                OrderItem.product_name,
+                func.coalesce(func.sum(OrderItem.quantity), 0).label("qty"),
+            )
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(Order.store_id == store.id, Order.payment_status == "paid")
+            .group_by(OrderItem.product_name)
+            .order_by(func.sum(OrderItem.quantity).desc())
+            .limit(1)
+        )
+    ).first()
+    top_product = top_row[0] if top_row else None
+
     return {
-        "id": str(order.id),
-        "short_id": str(order.id)[:8],
-        "customer_name": order.customer_name,
-        "total_amount": float(order.total_amount or 0),
-        "payment_status": order.payment_status,
-        "order_status": order.order_status,
-        "created_at": str(order.created_at),
+        "today_orders": int(today_orders),
+        "today_revenue": float(today_revenue),
+        "pending_orders": int(pending),
+        "top_product": top_product,
+        "store_name": store.store_name,
     }
 
 
-async def get_recent_orders(db: AsyncSession, store_id: str):
-    orders = await get_store_orders(db, store_id)
-    return [_order_payload(order) for order in orders[:5]]
-
-
-async def get_pending_orders(db: AsyncSession, store_id: str):
-    orders = await get_store_orders(db, store_id)
-    pending = [order for order in orders if order.order_status not in {"fulfilled", "delivered", "cancelled"}]
-    return [_order_payload(order) for order in pending[:5]]
-
-
-async def get_today_sales(db: AsyncSession, store_id: str):
-    from app.models.commerce import OrderItem
-    today = datetime.now(timezone.utc).date()
-    orders = await get_store_orders(db, store_id)
-    paid = [order for order in orders if order.payment_status == "paid" and order.paid_at and order.paid_at.date() == today]
-    
-    total_amount = float(sum(order.total_amount or 0 for order in paid))
-    
-    items_data = []
-    order_ids = [order.id for order in paid]
-    if order_ids:
-        items = (await db.execute(select(OrderItem).where(OrderItem.order_id.in_(order_ids)))).scalars().all()
-        summary = {}
-        for item in items:
-            name = item.product_name or "Unknown Product"
-            summary[name] = summary.get(name, 0) + item.quantity
-        items_data = [{"name": name, "quantity": qty} for name, qty in summary.items()]
-        
-    return {"count": len(paid), "amount": total_amount, "items": items_data}
-
-
-async def get_low_stock_products(db: AsyncSession, store_id: str):
-    result = await db.execute(select(Product).where(Product.store_id == store_id))
-    products = [p for p in result.scalars().all() if (p.stock_quantity or 0) <= (p.low_stock_threshold or 0)]
-    return [
-        {
-            "id": str(product.id),
-            "name": product.name,
-            "stock_quantity": product.stock_quantity or 0,
-            "low_stock_threshold": product.low_stock_threshold or 0,
+async def _get_wallet_balance(db: AsyncSession, user: User) -> dict:
+    wallet = (
+        await db.execute(select(Wallet).where(Wallet.user_id == user.id))
+    ).scalar_one_or_none()
+    if not wallet:
+        return {
+            "available_balance": 0.0,
+            "total_earned": 0.0,
+            "total_orders_paid": 0,
+            "recent_transactions": [],
         }
-        for product in products
-    ]
+
+    recent = (
+        await db.execute(
+            select(Transaction)
+            .where(Transaction.user_id == user.id)
+            .order_by(Transaction.created_at.desc())
+            .limit(5)
+        )
+    ).scalars().all()
+
+    return {
+        "available_balance": float(wallet.available_balance or 0),
+        "total_earned": float(wallet.total_earned or 0),
+        "total_orders_paid": int(wallet.total_orders_paid or 0),
+        "recent_transactions": [
+            {
+                "amount": float(t.amount or 0),
+                "type": t.type,
+                "narration": t.narration,
+                "status": t.status,
+            }
+            for t in recent
+        ],
+    }
 
 
-async def get_top_products(db: AsyncSession, store_id: str):
-    rows = await db.execute(
-        select(Product.name, func.coalesce(func.sum(Order.total_amount), 0).label("sales"))
-        .select_from(Product)
-        .join(Order, Order.store_id == Product.store_id, isouter=True)
-        .where(Product.store_id == store_id)
-        .group_by(Product.name)
-        .limit(5)
-    )
-    return [{"name": name, "sales": float(sales or 0)} for name, sales in rows.all()]
-
-
-async def get_store_link(db: AsyncSession, store_id: str):
-    store = await db.get(Store, store_id)
-    return f"/{store.slug}" if store else None
-
-
-async def create_product_from_chat(db: AsyncSession, user_id: str, product_data: dict):
-    store = await get_store_by_user(db, user_id)
+async def _get_orders(
+    db: AsyncSession, user: User, *, status: str, limit: int
+) -> dict:
+    store = await _get_store(db, user)
     if not store:
-        return None
-    return await create_product(db, store, product_data)
+        return {"orders": [], "total": 0, "store_missing": True}
+
+    where = [Order.store_id == store.id]
+    if status and status != "all":
+        where.append(Order.status == status)
+
+    rows = (
+        await db.execute(
+            select(Order)
+            .where(*where)
+            .order_by(Order.created_at.desc())
+            .limit(max(1, min(limit, 10)))
+        )
+    ).scalars().all()
+
+    return {
+        "filter_status": status,
+        "count": len(rows),
+        "orders": [
+            {
+                "order_ref": o.order_ref,
+                "customer_name": o.customer_name or "Guest",
+                "amount": float(o.total_amount or 0),
+                "status": o.status,
+                "payment_status": o.payment_status,
+            }
+            for o in rows
+        ],
+    }
 
 
-async def update_inventory(db: AsyncSession, product_id: str, quantity: int):
-    product = await db.get(Product, product_id)
-    if not product:
-        return None
-    product.stock_quantity = max((product.stock_quantity or 0) + int(quantity), 0)
-    await emit_event(db, {
-        "event_type": "stock_added" if quantity >= 0 else "stock_removed",
-        "source": "whatsapp",
-        "user_id": str((await db.get(Store, product.store_id)).user_id),
-        "store_id": str(product.store_id),
-        "product_id": str(product.id),
-        "quantity": quantity,
-    })
-    return product
+async def _add_product(
+    db: AsyncSession,
+    user: User,
+    *,
+    name: str,
+    price: Any,
+    category: str | None = None,
+) -> dict:
+    """MVP: chat-based product creation is deferred — dashboard only.
+
+    Kept as a dispatchable stub because ``_keyword_fallback`` still routes
+    'add X 1000' messages here. Returns a structured "coming soon" payload
+    so LLM Call 2 can generate a polite redirect to the dashboard.
+    """
+    return {
+        "ok": False,
+        "deferred": True,
+        "message": (
+            "Adding products from chat is coming soon. For now, add products "
+            "in your AAJE dashboard at aaje.store/admin/products."
+        ),
+        "attempted_name": name or None,
+    }
 
 
-async def update_inventory_from_chat(db: AsyncSession, store_id: str, message: str):
-    product = await _product_from_message(db, store_id, message)
-    if not product:
-        return {"error": "I could not match that product. Send: update stock Product Name 20."}
-
-    number = _first_int(message)
-    if number is None:
-        return {"error": "Send the stock quantity as a number. Example: update stock Ankara Bag 12."}
-
-    text = message.lower()
-    old_quantity = product.stock_quantity or 0
-    if any(term in text for term in {"add", "increase", "restock"}):
-        product.stock_quantity = old_quantity + number
-        movement_type = "in"
-        movement_quantity = number
-    elif any(term in text for term in {"remove", "reduce", "subtract"}):
-        product.stock_quantity = max(old_quantity - number, 0)
-        movement_type = "out"
-        movement_quantity = number
-    else:
-        product.stock_quantity = max(number, 0)
-        movement_type = "adjustment"
-        movement_quantity = product.stock_quantity - old_quantity
-
-    await emit_event(db, {
-        "event_type": "stock_added" if movement_quantity >= 0 else "stock_removed",
-        "source": "whatsapp",
-        "user_id": str((await db.get(Store, product.store_id)).user_id),
-        "store_id": str(product.store_id),
-        "product_id": str(product.id),
-        "quantity": movement_quantity,
-        "metadata": {"product_name": product.name, "stock_quantity": product.stock_quantity},
-    }, process_now=False)
-    return {"product_name": product.name, "stock_quantity": product.stock_quantity, "movement_type": movement_type}
+async def _get_bizprint(db: AsyncSession, user: User) -> dict:
+    bp = (
+        await db.execute(
+            select(BizPrint)
+            .where(BizPrint.user_id == user.id)
+            .order_by(BizPrint.computed_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if not bp:
+        return {
+            "available": False,
+            "message": (
+                "BizPrint not yet computed. Process at least one paid order, "
+                "then check back."
+            ),
+        }
+    return {
+        "available": True,
+        "score": float(bp.trader_score or 0),
+        "grade": bp.credit_grade or "—",
+        "consistency": float(bp.consistency_score or 0),
+        "volume": float(bp.volume_score or 0),
+        "growth": float(bp.growth_score or 0),
+        "tenure": float(bp.tenure_score or 0),
+        "loan_ceiling": float(bp.recommended_loan_ceiling or 0),
+        "orders_analyzed": int(bp.total_orders_analyzed or 0),
+    }
 
 
-async def create_product_from_chat_message(db: AsyncSession, user_id: str, message: str):
-    store = await get_store_by_user(db, user_id)
+async def _initiate_withdrawal(
+    db: AsyncSession, user: User, *, amount: Any = None
+) -> dict:
+    """MVP: there is no withdrawal flow. Customers pay direct to the
+    trader's bank account via the manual-transfer flow, so the trader's
+    money is already on their bank account — no AAJE wallet to withdraw
+    from. Returns a structured "no withdrawal needed" payload.
+    """
+    return {
+        "ok": False,
+        "deferred": True,
+        "message": (
+            "There's no AAJE wallet to withdraw from right now — customers "
+            "transfer directly to your bank account, so your money is "
+            "already with you. Reply *balance* to see confirmed sales this "
+            "month. Wallet withdrawals come back once AAJE adds automated "
+            "payments next month."
+        ),
+    }
+
+
+async def _get_store_link(db: AsyncSession, user: User) -> dict:
+    store = await _get_store(db, user)
     if not store:
-        return {"error": "You do not have a connected store yet."}
+        return {"error": "no_store", "message": "Set up your store first"}
+    from app.utils.formatters import build_store_url
 
-    price = _price_from_message(message)
-    if price is None:
-        return {"error": "Send product details with a price. Example: add product Ankara Bag price 15000 stock 8."}
-
-    stock = _stock_from_message(message) or 0
-    name = _product_name_from_create_message(message)
-    if not name:
-        return {"error": "Send the product name. Example: add product Ankara Bag price 15000 stock 8."}
-
-    product = await create_product(db, store, {
-        "name": name,
-        "price": price,
-        "stock_quantity": stock,
-        "source": "whatsapp",
-    })
-    return {"id": str(product.id), "name": product.name, "price": float(product.price or 0), "stock_quantity": product.stock_quantity or 0}
-
-
-async def mark_order_fulfilled_from_chat(db: AsyncSession, store_id: str, message: str):
-    order = await _order_from_message(db, store_id, message)
-    if not order:
-        return {"error": "I could not match that order. Send: mark order 12345678 fulfilled."}
-    order.order_status = "fulfilled"
-    order.status = "fulfilled"
-    await emit_event(db, {
-        "event_type": "order_fulfilled",
-        "source": "whatsapp",
-        "user_id": str(order.user_id),
-        "store_id": str(order.store_id),
-        "order_id": str(order.id),
-    }, process_now=False)
-    return {"id": str(order.id), "short_id": str(order.id)[:8]}
-
-
-async def generate_store_insight(db: AsyncSession, store_id: str):
-    sales = await get_today_sales(db, store_id)
-    
-    if sales['count'] == 0:
-        return "You haven't made any sales today yet. Share your store link to get started!"
-        
-    items_text = "\n".join([f"- {item['name']} ×{item['quantity']}" for item in sales['items']])
-    return f"You sold:\n{items_text}\nTotal sales: ₦{sales['amount']:,.2f}"
-
-
-async def _product_from_message(db: AsyncSession, store_id: str, message: str) -> Product | None:
-    products = (await db.execute(select(Product).where(Product.store_id == store_id))).scalars().all()
-    text = message.lower()
-    matches = [product for product in products if product.name.lower() in text]
-    if matches:
-        return max(matches, key=lambda product: len(product.name))
-    cleaned = re.sub(r"\b(add|update|set|stock|inventory|to|by|increase|reduce|remove|restock)\b", " ", text)
-    cleaned = re.sub(r"\d+", " ", cleaned)
-    words = {word for word in cleaned.split() if len(word) > 2}
-    for product in products:
-        if any(word in product.name.lower() for word in words):
-            return product
-    return None
-
-
-async def _order_from_message(db: AsyncSession, store_id: str, message: str) -> Order | None:
-    token_match = re.search(r"\b([0-9a-f]{8,})\b", message.lower())
-    orders = await get_store_orders(db, store_id)
-    if token_match:
-        token = token_match.group(1)
-        for order in orders:
-            if str(order.id).replace("-", "").startswith(token.replace("-", "")):
-                return order
-    return orders[0] if len(orders) == 1 else None
-
-
-def _first_int(message: str) -> int | None:
-    match = re.search(r"\b(\d+)\b", message.replace(",", ""))
-    return int(match.group(1)) if match else None
-
-
-def _price_from_message(message: str) -> float | None:
-    text = message.lower().replace(",", "")
-    match = re.search(r"(?:price|ngn|₦)\s*(\d+(?:\.\d+)?)", text)
-    if match:
-        return float(match.group(1))
-    numbers = re.findall(r"\b\d+(?:\.\d+)?\b", text)
-    return float(numbers[0]) if numbers else None
-
-
-def _stock_from_message(message: str) -> int | None:
-    match = re.search(r"(?:stock|qty|quantity)\s*(\d+)", message.lower().replace(",", ""))
-    return int(match.group(1)) if match else None
-
-
-def _product_name_from_create_message(message: str) -> str:
-    text = re.sub(r"\b(add|create|new)\s+product\b", "", message, flags=re.IGNORECASE).strip()
-    text = re.split(r"\b(price|ngn|stock|qty|quantity)\b", text, flags=re.IGNORECASE)[0].strip(" :-")
-    return text[:150]
-
-
-async def get_bizprint(db: AsyncSession, user_id: str):
-    snapshot = (await db.execute(
-        select(BizPrintSnapshot).where(BizPrintSnapshot.user_id == user_id).order_by(BizPrintSnapshot.created_at.desc())
-    )).scalar_one_or_none()
-    return snapshot.snapshot_json if snapshot else {}
-
-
-async def initiate_withdrawal(db: AsyncSession, user_id: str, amount: float):
-    token, session = await create_flow_session(db, user_id, "withdrawal", {"amount": amount})
-    await emit_event(db, {
-        "event_type": "withdrawal_requested",
-        "source": "whatsapp",
-        "user_id": user_id,
-        "amount": amount,
-        "flow_session_id": str(session.id),
-    }, process_now=False)
-    return {"requires_pin": True, "flow_token": token, "amount": float(Decimal(str(amount)))}
-
-
-async def parse_receipt(image_url: str):
-    return {"image_url": image_url, "status": "queued_for_review"}
-
-
-async def send_whatsapp_notification(user_id: str, message: str):
-    return {"queued": True, "user_id": user_id, "message": message}
-
-
-async def get_marketing_analytics_tool(db: AsyncSession, user_id: str, days: int = 7):
-    from app.campaigns.routes import get_marketing_analytics
-    store = await get_store_by_user(db, user_id)
-    if not store:
-        return {"error": "Store not found"}
-    return await get_marketing_analytics(str(store.id), days=days, db=db)
-
-
-AVAILABLE_TOOL_NAMES = [
-    "get_store_by_user",
-    "get_store_orders",
-    "get_recent_orders",
-    "get_pending_orders",
-    "get_today_sales",
-    "get_low_stock_products",
-    "get_top_products",
-    "get_store_link",
-    "create_product_from_chat_message",
-    "update_inventory",
-    "update_inventory_from_chat",
-    "mark_order_fulfilled_from_chat",
-    "generate_store_insight",
-    "get_bizprint",
-    "initiate_withdrawal",
-    "parse_receipt",
-    "create_flow_session",
-    "send_whatsapp_notification",
-    "get_marketing_analytics_tool",
-    "emit_event",
-]
+    url = build_store_url(store.store_slug)
+    return {
+        "store_name": store.store_name,
+        "url": url,
+        "is_published": bool(store.is_published),
+        "share_message": f"Shop with me on AAJE — {store.store_name}: {url}",
+    }

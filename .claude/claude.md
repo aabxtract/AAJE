@@ -13,10 +13,12 @@ This doc describes the **target** architecture. The repo is mid-restructure. Unt
 Open items as of May 2026:
 - `backend/app/` still has the old domain-per-folder layout (~20 dirs: `auth`, `bizprint`, `campaigns`, `events`, `inventory`, `orders`, `payments`, `products`, `users`, `whatsapp`, etc.). Target is the 7-folder layer-per-concern layout in Section 5 (`routes/`, `services/`, `intelligence/`, `agents/`, `models/`, `schemas/`, `utils/`).
 - `backend/storefront/` (Python service code) and `frontend/storefront-web/` (Vite app) both exist — duplication to be collapsed.
-- Squad API references remain in the codebase (recent commits are part of the removal — see commit `6f6706b`). Target is fully Squad-free per rule 18.14.
+- Squad API references remain in the codebase (recent commits are part of the removal — see commit `6f6706b`). Target is fully Squad-free per rule 14.
+- **Channel pivot in progress (May 2026):** Meta WhatsApp Cloud API code (`services/whatsapp_client.py`, `whatsapp/service.py`, `routes/webhook_whatsapp.py`, `whatsapp_flows/*.json`) is being replaced by Twilio for MVP. Meta returns in June 2026 — keep code paths swap-friendly behind the `services/whatsapp_client.py` interface.
 - SQLite files (`aaje_dev.db`, `aaje_test.db`) at repo root are dev artifacts. Supabase Postgres is the source of truth per Section 3.
 - `app/` at repo root (orphan from earlier layout, only contains `__init__.py`) is to be deleted.
-- `whatsapp_flows/` at repo root holds 5 production Flow JSONs and stays where it is — see updated Section 5.
+- `whatsapp_flows/` at repo root holds 5 Meta-format Flow JSONs from the previous architecture. Inert during the Twilio MVP; revisit when Meta migration lands in June.
+- `users.verified_bank_account / verified_bank_code / verified_bank_name` columns (originally for Squad/Mono account verification) are repurposed as the trader's payout account for the manual-transfer MVP. No new columns needed — the storefront reads these to show buyers where to transfer.
 
 When the on-disk state conflicts with this doc: trust this doc for **new** code. Do not delete or rewrite existing code to match without checking with the maintainer first.
 
@@ -60,9 +62,12 @@ management, payment collection via Monnify, and a financial identity score
 - Trader connects their WhatsApp after web signup
 - WhatsApp becomes their mobile command center
 - They receive order notifications, manage orders,
-  add products, check balance, all from chat
-- Powered by Meta WhatsApp Cloud API (NOT Twilio)
-- Any phone can message AAJE — no join code required
+  check balance, all from chat
+- Powered by Twilio WhatsApp (sandbox now, production after MVP test;
+  Meta migration targeted June 2026)
+- **Twilio sandbox limitation:** the trader must send `join {sandbox_code}`
+  to the Twilio number once before they can receive bot messages. Buyers
+  never need to join because the bot never messages buyers (§11).
 
 ### The Connection
 These are NOT two separate products. They share:
@@ -83,8 +88,11 @@ Anything done on WhatsApp reflects on web instantly.
 Backend:         Python 3.11 + FastAPI (async throughout)
 Database:        PostgreSQL via Supabase (free tier → paid)
 Session State:   Upstash Redis (TTL-managed)
-WhatsApp:        Meta WhatsApp Cloud API (free tier)
-Payments:        Monnify API (payment links + webhooks)
+WhatsApp:        Twilio WhatsApp (sandbox now → production after MVP test)
+                 Migration to Meta WhatsApp Cloud API targeted June 2026
+                 (post-validation, once ~real-trader signal is in)
+Payments:        Manual bank transfer for weekend MVP (no payment gateway)
+                 Monnify re-enabled after CAC clears
 AI — LLM:        Groq / Llama 4 Scout (via abstraction layer)
 AI — Analytics:  Pandas + NumPy (BizPrint computation)
 Storage:         Supabase Storage (product images, store assets)
@@ -97,13 +105,15 @@ Tunneling:       ngrok (development only)
 ```
 
 **What is NOT in this stack:**
-- No Twilio (replaced by Meta WhatsApp Cloud API)
+- No Meta WhatsApp Cloud API for MVP (planned for June 2026 migration after Twilio production validates)
 - No YarnGPT (removed entirely — was TTS only, useless)
 - No Squad API (removed — bank account creation rails too hard at MVP)
 - No Celery (APScheduler inside FastAPI is sufficient for MVP)
 - No React/Next.js component framework (Vite is the build tool; output stays vanilla JS)
 - No voice processing (removed for stability)
 - No complex OCR pipeline (basic image handling only)
+- No PIN flow for MVP (no withdrawals = no PIN-protected actions; deferred to post-Monnify)
+- No bot-initiated messages to buyers — bot only messages traders (§11)
 
 Docker: `backend/docker-compose.yml` exists for local-dev convenience only. Deploys are buildpack-based on Railway/Render, not container-based. Do not bake Docker assumptions into deploy or scheduler code.
 
@@ -187,8 +197,12 @@ customer_name VARCHAR(100)
 customer_whatsapp VARCHAR(20)
 customer_email VARCHAR(255)
 total_amount NUMERIC(12,2) NOT NULL
-status VARCHAR(20) DEFAULT 'pending'
-  -- values: pending, paid, processing, delivered, cancelled, refunded
+status VARCHAR(30) DEFAULT 'pending'
+  -- values: pending, transfer_claimed, confirmed, rejected,
+  --         processing, delivered, cancelled, refunded
+  -- transfer_claimed/confirmed/rejected are the weekend-MVP states
+  -- for the manual bank-transfer flow (see §10). They are replaced by
+  -- 'paid' once Monnify is re-enabled post-CAC.
 payment_status VARCHAR(20) DEFAULT 'unpaid'
   -- values: unpaid, paid, failed
 monnify_payment_ref VARCHAR(100)
@@ -418,10 +432,10 @@ aaje/
 │   ├── 04_pin_confirm.json
 │   └── 05_business_passport.json
 │
-└── docs/
-    ├── CLAUDE.md                     # This file
-    ├── AGENT_CONTEXT.md              # Agent knowledge and behavior spec
-    └── agent_knowledge.md            # Domain knowledge fed to AI agent
+└── .claude/
+    ├── CLAUDE.md                     # This file (project intelligence)
+    ├── AGENT_CONTEXT.md              # Agent behavior spec (sync with §9)
+    └── phasebuilding.md              # Build phase reference
 ```
 
 ---
@@ -442,12 +456,22 @@ JWT_EXPIRY_HOURS=168
 ADMIN_TOKEN=
 FRONTEND_URL=http://localhost:3000
 
-# Meta WhatsApp Cloud API
-META_APP_ID=
-META_APP_SECRET=
-META_PHONE_NUMBER_ID=
-META_WHATSAPP_TOKEN=
-META_WEBHOOK_VERIFY_TOKEN=
+# Twilio WhatsApp (sandbox → production)
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+  # Sandbox default. Replace with production sender after WhatsApp Business
+  # approval. Always include the 'whatsapp:' prefix.
+TWILIO_WEBHOOK_VALIDATE=true
+  # Set false only for local-ngrok dev where signature can't be reconstructed.
+
+# Meta WhatsApp Cloud API (June 2026 migration target — DO NOT WIRE FOR MVP)
+# Keep keys reserved so the eventual swap is one config change.
+# META_APP_ID=
+# META_APP_SECRET=
+# META_PHONE_NUMBER_ID=
+# META_WHATSAPP_TOKEN=
+# META_WEBHOOK_VERIFY_TOKEN=
 
 # Monnify
 MONNIFY_API_KEY=
@@ -538,7 +562,7 @@ Total target                ~2.2s
 Hard ceiling                 5.0s    → keyword routing, log slow path
 ```
 
-Webhook return is independent of this budget — Meta gets 200 within 3 seconds via BackgroundTasks; the agent loop runs after the 200 is returned. Slow agent processing never blocks Meta.
+Webhook return is independent of this budget — Twilio gets 200 (empty TwiML) within 5 seconds via BackgroundTasks; the agent loop runs after the 200 is returned. Slow agent processing never blocks Twilio.
 
 ### System 3: BizPrint Engine
 Pure Pandas math. No LLM. Runs weekly via scheduler.
@@ -569,8 +593,12 @@ Intent mapping determines which section loads per conversation turn.
 
 ## 8. The Agent Tools (Complete Definitions)
 
-Seven tools. Every tool is a Python async function in intelligence/tools.py.
-The LLM selects which tool to call. The backend executes it.
+Five tools for MVP. Every tool is a Python async function in
+intelligence/tools.py. The LLM selects which tool to call. The backend
+executes it.
+
+`add_product` and `initiate_withdrawal` are deferred for MVP — products are
+added via the dashboard, withdrawals require Monnify (post-CAC).
 
 ```
 get_store_summary()
@@ -584,22 +612,12 @@ get_wallet_balance()
 get_orders(status, limit)
   → Returns: list of orders with details
   → Call when: trader wants to see their orders
-  → status: pending | paid | processing | delivered | all
-
-add_product(name, price, category)
-  → Creates product in database, returns confirmation
-  → Call when: trader wants to add a product to their store
-  → Extract name and price from their message
+  → status: pending | transfer_claimed | confirmed | rejected
+            | delivered | all
 
 get_bizprint()
   → Returns: score, grade, all four components, loan eligibility
   → Call when: trader asks about BizPrint, score, credit, loan eligibility
-
-initiate_withdrawal(amount)
-  → Triggers WhatsApp Flow for withdrawal
-  → Returns: flow trigger confirmation
-  → Call when: trader wants to withdraw money
-  → Amount is optional — Flow handles collection if not provided
 
 get_store_link()
   → Returns: public store URL and sharing message
@@ -719,35 +737,100 @@ This maximizes early adoption. Do not add fee logic yet.
 
 ---
 
-## 11. The Meta WhatsApp Cloud API Integration
+## 11. The Twilio WhatsApp Integration (MVP)
 
-### Webhook Routes (Both on same path)
-GET /webhook/whatsapp → Meta verification
-  - Check hub.mode == "subscribe"
-  - Check hub.verify_token == settings.meta_webhook_verify_token
-  - Return hub.challenge as plain text with 200
+### Channel phases
 
-POST /webhook/whatsapp → Incoming messages
-  - Validate X-Hub-Signature-256 using HMAC-SHA256
-    with settings.meta_app_secret against raw request body
+```
+Phase 1 — Twilio sandbox        ← we are here
+Phase 2 — Twilio production WhatsApp (after MVP smoke-tests)
+Phase 3 — Meta WhatsApp Cloud API (June 2026, post-validation)
+```
+
+The trader and dev numbers must `join {sandbox_code}` to receive bot messages
+during Phase 1. **Buyers never need to join** because the bot does NOT message
+buyers — see "Bot direction" below.
+
+### Webhook Route (single path)
+POST /webhook/whatsapp → incoming Twilio message
+  - Twilio sends application/x-www-form-urlencoded, NOT JSON
+  - Validate `X-Twilio-Signature` using TwilioRequestValidator
+    against the full request URL + sorted form params + `twilio_auth_token`
   - Rate limit: 10 messages per minute per number (Redis)
-  - Extract: sender number, message body, message type
-  - Return 200 IMMEDIATELY
+  - Extract: `From` (sender, prefix `whatsapp:+...`), `Body`, `MessageSid`
+  - Return TwiML `<Response/>` (empty) with 200 within 5 seconds
   - Use FastAPI BackgroundTasks for process_message()
   - NEVER let process_message block the webhook response
 
-### Outbound Message Types
-send_text(to, message) → plain text
-send_buttons(to, body, buttons) → list message (max 10 items)
-send_cta_button(to, body, label, url) → call-to-action button
-send_image(to, image_url, caption) → media message
+No GET verification endpoint — Twilio uses signed POSTs only.
+
+### Outbound Message Helpers (services/whatsapp_client.py)
+send_text(to, message)
+  - `to` is normalized to `whatsapp:+{number}` before sending
+send_cta_link(to, body, label, url)
+  - MVP: emits plain-text body with the URL appended; WhatsApp auto-linkifies
+  - Phase 2 upgrade path: register a Twilio Content template with a URL
+    button and call the templated-message API. Same function signature.
+send_image(to, image_url, caption)
+
+There is intentionally no in-chat list/button message helper for MVP.
+The navigation menu is plain text (§15).
+
+### Bot direction (one-directional)
+
+Bot → Trader: yes (order alerts, transfer claims, status confirmations)
+Bot → Buyer: NEVER. The trader uses the wa.me deep link inside the trader's
+notification to start a direct conversation with the buyer on the trader's
+personal WhatsApp. The bot's own number never messages a buyer.
+
+This removes the 24-hour session window problem for buyer-side messages and
+removes Twilio sandbox join-code friction for buyers entirely.
 
 ### Critical Rules
-- Return 200 to Meta within 3 seconds or Meta will retry
-- BackgroundTasks handles everything after the 200 return
-- Wrap ALL of process_message in try-except
-- On exception: log with sender number, send generic error to trader
-- NEVER fail silently
+- Validate `X-Twilio-Signature` on every POST. Refuse with 403 on mismatch.
+- Return 200 (with empty TwiML) within 5 seconds or Twilio retries.
+- BackgroundTasks handles all processing after the 200 return.
+- Wrap ALL of process_message in try-except.
+- On exception: log with sender number, send generic error to trader.
+- NEVER fail silently.
+- The bot's `From` number is `TWILIO_WHATSAPP_FROM` — never hard-code.
+
+### The Manual-Transfer Payment Flow (MVP)
+
+Monnify is offline until CAC clears. Until then:
+
+```
+Customer places order via storefront
+    ↓
+POST /orders creates order record (status=pending)
+    ↓
+Storefront shows trader's bank account + amount + "I've Transferred" button
+    ↓
+Customer makes the bank transfer manually
+    ↓
+Customer clicks "I've Transferred"
+    ↓
+PATCH /orders/{order_ref}/claim-transfer  (public, no auth)
+    ↓
+Order status → transfer_claimed
+    ↓
+Trader receives WhatsApp notification with:
+  - order ref, customer name, item summary, amount
+  - bank last-4 ("check your {bank_name} ending {last4}")
+  - wa.me/{buyer_phone}?text={prefilled} deep link (plain text)
+  - "Reply confirm AAJE-X or reject AAJE-X"
+    ↓
+Trader replies in chat:
+  - confirm AAJE-X → status confirmed → bot acknowledges trader only
+  - reject AAJE-X  → status rejected  → bot acknowledges trader only
+  - delivered AAJE-X → status delivered → bot acknowledges trader only
+    ↓
+Trader uses the wa.me deep link in the notification to contact buyer directly
+from their PERSONAL WhatsApp — NOT through the bot.
+```
+
+The bot never sends a payment-confirmed or transfer-rejected message to the
+buyer. That conversation is trader-driven on the trader's personal line.
 
 ---
 
@@ -761,7 +844,7 @@ Default session structure:
 ```python
 {
     "stage": "NEW",
-    # NEW, CONNECTING, ACTIVE, ESCALATED
+    # NEW, CONNECTING, ACTIVE, ESCALATED, LOCKED
     "language": None,
     # en, yo, ig, ha, pcm
     "user_id": None,
@@ -788,15 +871,22 @@ Other Redis keys:
 
 ## 13. Security Rules (Non-Negotiable)
 
-### PIN Security
+### PIN Security (deferred — not in MVP)
+
+MVP has no PIN flow because there is no withdrawal flow — funds land
+directly in the trader's bank from the manual transfer (§11). PIN security
+rules below come back when Monnify + withdrawals re-enable post-CAC:
+
 - PIN is ALWAYS 4 digits
 - Hashed with bcrypt at cost factor 12 immediately on receipt
 - Raw PIN exists in memory for milliseconds only
-- Never stored in plain text
-- Never logged anywhere
-- Never visible in chat history
-- PIN entry ALWAYS goes through WhatsApp Flow (never typed in chat)
+- Never stored in plain text, never logged, never visible in chat history
+- PIN entry ALWAYS goes through a hosted web form over HTTPS (Twilio has no
+  native masked-input Flow equivalent — buyer/trader is sent a one-tap link)
 - 3 wrong attempts → account locked → escalation triggered
+
+When the Meta migration lands in June 2026, PIN entry switches back to a
+WhatsApp Flow with masked input (Meta-only feature).
 
 ### PII Scrubbing
 pii_scrubber.scrub() runs before EVERY LLM call. No exceptions.
@@ -808,10 +898,16 @@ It:
 - Rounds monetary amounts to nearest hundred
 
 ### Webhook Validation
-- Twilio: REMOVED — using Meta directly
-- Meta: X-Hub-Signature-256 validation on every POST
-- Monnify: signature validation on every webhook
+- Twilio: `X-Twilio-Signature` validated via TwilioRequestValidator on every POST
+- Monnify: signature validation on every webhook (re-enabled post-CAC)
+- Meta: not used in MVP (June 2026 migration)
 - Return 403 on any validation failure
+
+### Buyer phone number
+The buyer enters their WhatsApp number at checkout. It is stored on
+`orders.customer_whatsapp` and used for exactly one thing: building the
+`wa.me/{buyer_phone}?text={prefilled}` deep link inside the trader's
+notification. The AAJE bot never messages the buyer.
 
 ### JWT Auth
 - All dashboard routes require valid JWT
@@ -868,21 +964,27 @@ Score is computed:
 
 ---
 
-## 15. The WhatsApp Navigation Menu
+## 15. The WhatsApp Navigation Menu (MVP — text-only)
 
-When trader sends "/" or "menu":
-Send a WhatsApp list message with these options:
+Twilio sandbox/production WhatsApp can send interactive list messages, but
+for MVP we keep the menu as plain text (one less template-approval blocker).
+The six chat commands a trader can send the bot:
 
 ```
-📦 My Orders     → order_agent.handle_my_orders()
-💰 My Balance    → money_agent.handle_balance()
-🏪 My Store      → tools.get_store_link()
-➕ Add Product   → product_agent.handle_add_product()
-💸 Withdraw      → money_agent.handle_withdraw()
-👥 Pay Supplier  → money_agent.handle_pay_supplier()
-📊 My BizPrint   → bizprint_agent.handle_bizprint()
-❓ Help          → send help text
+orders              → see pending and transfer-claimed orders
+confirm AAJE-XXXX   → confirm payment received (transfer_claimed → confirmed)
+reject AAJE-XXXX    → payment not received   (transfer_claimed → rejected)
+delivered AAJE-XXXX → mark order fulfilled    (confirmed → delivered)
+balance             → total confirmed payments this month
+menu                → see this list
 ```
+
+Withdrawal, supplier payment, and the in-chat add-product agent are deferred:
+- Withdrawal/supplier: requires Monnify + PIN, both gated on CAC
+- Add product via chat: traders add via dashboard for MVP
+
+When Meta migration lands (June 2026), this becomes an interactive list
+message with the same six options.
 
 ---
 
@@ -947,20 +1049,23 @@ and applies it as CSS variables on the page root element.
 4. BackgroundTasks NOT asyncio.create_task for webhook processing
    → asyncio.create_task fails silently on exceptions
 
-5. Return 200 to Meta BEFORE processing the message
+5. Return 200 to Twilio (empty TwiML) BEFORE processing the message
    → Processing happens in BackgroundTasks after the 200 return
+   → Twilio retries on >5s response time or non-2xx status
 
 6. Every webhook validates its signature FIRST
+   → Twilio: `X-Twilio-Signature` via TwilioRequestValidator
    → Return 403 immediately if validation fails
 
-7. Deduplication check on every Monnify webhook
+7. Deduplication check on every Monnify webhook (when re-enabled post-CAC)
    → Check monnify_ref in transactions table before processing
 
-8. PIN entry NEVER happens in chat text
-   → Always through WhatsApp Flow with masked input
+8. PIN entry is deferred for MVP (no withdrawal flow until Monnify is back)
+   → When PIN returns: hosted web form over HTTPS on Twilio,
+     WhatsApp Flow with masked input once Meta migration lands
 
-9. Withdrawal destination is always the verified bank account
-   → Cannot be changed via chat. Period.
+9. Withdrawal destination (when withdrawals re-enable) is always the
+   verified bank account → cannot be changed via chat. Period.
 
 10. The LLM never sees raw PII
     → pii_scrubber runs first, always
@@ -971,11 +1076,12 @@ and applies it as CSS variables on the page root element.
 12. The storefront is Option B (customized within AAJE infrastructure)
     → NOT Option C (code generation) — that is a future roadmap item
 
-13. No Twilio anywhere in this codebase
-    → All WhatsApp goes through Meta WhatsApp Cloud API directly
+13. No Meta WhatsApp Cloud API code in MVP
+    → All WhatsApp goes through Twilio (sandbox now, production after MVP test).
+    → Meta migration is the June 2026 milestone, post-validation.
 
 14. No Squad API anywhere in this codebase
-    → Payment rails are Monnify only
+    → Payment rails: manual bank transfer for MVP, Monnify post-CAC.
 
 15. The platform fee is ZERO for MVP
     → Do not add fee deduction logic to webhook processing
@@ -992,23 +1098,29 @@ Minute 1: Web signup
   Type business description
   AI generates store with products
   Store live at aaje.store/{slug}
+  Trader adds bank account details (account number, name, bank) for payout
 
-Minute 2: Customer order and payment
+Minute 2: Customer places order with manual transfer
   Visit public store URL (second device)
-  Customer places order
-  Monnify payment link opens
-  Complete sandbox payment
-  WhatsApp notification fires on trader's phone
+  Customer enters name + WhatsApp number, places order
+  Storefront shows trader's bank account + amount
+  Customer transfers via their banking app
+  Customer taps "I've Transferred"
+  Trader gets WhatsApp notification on Twilio bot with:
+    - order details + amount
+    - "Reply confirm AAJE-X / reject AAJE-X"
+    - wa.me deep link to message the buyer directly
 
 Minute 3: WhatsApp management
-  Trader sees "New order paid" notification
-  Sends "my orders" → sees the order
-  Taps Mark Delivered → order status updates
+  Trader replies "confirm AAJE-X" → bot confirms to trader only
+  Trader taps the wa.me link → opens personal WhatsApp to the buyer
+  with a pre-filled "we've confirmed your payment" template
+  Trader sends/edits the message — buyer hears from a real human
 
-Minute 4: Add product and see it live
-  Trader types "add lace fabric 4000"
-  AAJE confirms product added
-  Refresh store page → lace fabric appears
+Minute 4: Status update from chat
+  After fulfilling, trader replies "delivered AAJE-X"
+  Order moves to delivered status
+  Refresh dashboard → status visible
 
 Minute 5: BizPrint identity
   Trader types "my BizPrint"
@@ -1018,8 +1130,9 @@ Minute 5: BizPrint identity
   B+ grade returned with zero PII
 ```
 
-The demo must work on production URL (Railway/Render + Vercel).
-Never demo from localhost.
+The demo must work on production URL (Railway/Render + Vercel) over Twilio
+sandbox. Both the trader and any dev observers must have joined the sandbox
+with the `join {code}` message first.
 
 ---
 
@@ -1027,6 +1140,17 @@ Never demo from localhost.
 
 Do not build these for MVP. They appear in pitch as roadmap:
 
+- **Meta WhatsApp Cloud API migration (June 2026)** — replaces Twilio once
+  the MVP has real-trader validation. The `services/whatsapp_client.py`
+  abstraction is what makes this a low-effort swap. Meta brings: free
+  conversation tier, in-chat Flows (returns masked-PIN entry), any phone can
+  message the bot without a join code.
+- **PIN flow + withdrawals + supplier payments** — re-enabled when Monnify
+  re-enables post-CAC. Schema columns (`pin_hash`, `verified_bank_*`) are
+  already present.
+- **Monnify automated payments** — replaces the manual-transfer flow once
+  CAC is obtained next month. Schema (`monnify_payment_ref`, `payment_link`,
+  `payment_status`) is already there, columns are inert during MVP.
 - Option C storefronts (full code generation per merchant — Q4 project. Clean upgrade path: `stores.theme_config` JSONB will hold generated code instead of config values. DB does not change.)
 - Multi-language RAG knowledge base (upgrade from section-based — uses Supabase pgvector, no new service needed)
 - Self-hosted LLM inference (Level 2 model-as-infrastructure — Modal.com or AWS Inferentia, behind the existing `llm_client.py`. One env var change.)
@@ -1059,25 +1183,30 @@ These are not edge cases. They are guaranteed to happen in production. Each has 
 → Agent runs with minimal context
 → Response is generic but functional
 
-**Monnify webhook delayed or lost**
+**Monnify webhook delayed or lost** (post-CAC, when Monnify re-enables)
 → Order stays in `pending` status until Monnify retries
 → Our endpoint returns 500 on processing failure — Monnify retries automatically
 → Return 200 ONLY after successful processing (and deduplication check)
 
-**Meta WhatsApp delivery failure**
-→ Delivery webhook from Meta logs to `notification_log` with `delivered=false`
+**Twilio WhatsApp delivery failure**
+→ Twilio status callback to `/webhook/whatsapp/status` logs failure to
+  `notification_log` with `delivered=false`
 → One retry after 60 seconds
 → After 2 failures, flag for manual review — do not loop
+→ Common cause in Phase 1: trader hasn't sent the sandbox `join {code}` yet
 
 **Redis unavailable**
 → Session cannot be loaded or saved
-→ Treat each message as a fresh session (no PIN-in-progress state)
+→ Treat each message as a fresh session
 → Agent still works but loses conversation memory
-→ Page on this — Redis being down means PIN flows break and rate limiting is bypassed
+→ Page on this — Redis being down means rate limiting is bypassed
 
-**Meta webhook signature validation failure**
+**Twilio webhook signature validation failure**
 → Return 403 immediately, no processing, no body content logged
 → Possible attacker probing — count these in metrics
+→ Common dev cause: `app_public_url` mismatch between Twilio console and
+  the URL signature was computed against. Set `TWILIO_WEBHOOK_VALIDATE=false`
+  ONLY for local ngrok dev, never in prod.
 
 **Tool execution failure inside agent loop**
 → Catch in `execute_tool()`, return structured error to LLM call 2
@@ -1091,6 +1220,6 @@ These are not edge cases. They are guaranteed to happen in production. Each has 
 
 ---
 
-*Last updated: May 2026*
+*Last updated: May 2026 — Twilio MVP pivot*
 *This file must be updated whenever a major architectural decision changes.*
 *Both CLAUDE.md and AGENT_CONTEXT.md must stay in sync.*

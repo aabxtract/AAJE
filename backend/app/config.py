@@ -34,6 +34,18 @@ class Settings(BaseSettings):
     meta_flow_private_key_path: str = ""
     meta_flow_private_key_passphrase: str = ""
 
+    # Twilio WhatsApp (MVP channel — sandbox now, production after smoke test)
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_from: str = "whatsapp:+14155238886"
+    twilio_webhook_validate: bool = True
+
+    monnify_api_key: str = ""
+    monnify_secret_key: str = ""
+    monnify_base_url: str = "https://sandbox.monnify.com"
+    monnify_contract_code: str = ""
+    monnify_redirect_url: str = ""
+
     squad_secret_key: str = ""
     squad_base_url: str = "https://sandbox-api-d.squadco.com"
     squad_revenue_account: str = ""

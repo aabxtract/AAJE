@@ -18,6 +18,7 @@ class Product(Base):
     category = Column(String(100))
     image_url = Column(Text)
     stock_count = Column(Integer)
+    low_stock_threshold = Column(Integer, default=5)
     is_available = Column(Boolean, default=True)
     source = Column(String(20), default="web")
     created_at = Column(DateTime(timezone=True), server_default=func.now())

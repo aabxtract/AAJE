@@ -1,10 +1,18 @@
-import hashlib
-import hmac
-import json
-import logging
+"""
+Twilio WhatsApp webhook (MVP).
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request, Response
+Twilio sends ``application/x-www-form-urlencoded`` POSTs. There is no GET
+verification step (Twilio uses signed POSTs only). We validate
+``X-Twilio-Signature`` and return an empty ``<Response/>`` TwiML body.
+
+Heavy work runs in BackgroundTasks AFTER the 200 is returned (CLAUDE.md §11).
+"""
+from __future__ import annotations
+
+import logging
 from typing import Annotated
+
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, Response
 
 from app.config import settings
 from app.redis import set_rate_limit
@@ -13,99 +21,77 @@ from app.services.session import route_message
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["whatsapp"])
 
-_RATE_LIMIT_MAX = 5  # messages per 60-second window per sender
-
-
-@router.get("/webhook/whatsapp")
-async def verify_webhook(
-    hub_mode: Annotated[str, Query(alias="hub.mode")] = "",
-    hub_challenge: Annotated[str, Query(alias="hub.challenge")] = "",
-    hub_verify_token: Annotated[str, Query(alias="hub.verify_token")] = "",
-):
-    if not settings.meta_webhook_verify_token:
-        logger.error("Webhook verify token not configured — refusing verification")
-        raise HTTPException(status_code=503, detail="Webhook not configured")
-    if hub_mode == "subscribe" and hub_verify_token == settings.meta_webhook_verify_token:
-        return Response(content=hub_challenge, media_type="text/plain")
-    raise HTTPException(status_code=403, detail="Forbidden")
+_RATE_LIMIT_MAX = 10  # messages per 60-second window per sender
+_TWIML_EMPTY = '<?xml version="1.0" encoding="UTF-8"?><Response/>'
 
 
 @router.post("/webhook/whatsapp")
 async def receive_webhook(
     request: Request,
     background: BackgroundTasks,
-    x_hub_signature_256: Annotated[str | None, Header()] = None,
+    x_twilio_signature: Annotated[str | None, Header()] = None,
 ):
     raw_body = await request.body()
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
 
-    # Validate HMAC signature. Outside development, refuse to process without
-    # a configured secret. In development, validate only if a secret is set.
-    if settings.app_env != "development":
-        if not settings.meta_app_secret:
-            logger.error("META_APP_SECRET missing in non-dev environment")
-            raise HTTPException(status_code=503, detail="Webhook not configured")
-        if not x_hub_signature_256 or not _valid_signature(raw_body, x_hub_signature_256):
-            logger.warning("WhatsApp webhook: invalid signature")
-            raise HTTPException(status_code=403, detail="Invalid signature")
-    elif settings.meta_app_secret:
-        if not x_hub_signature_256 or not _valid_signature(raw_body, x_hub_signature_256):
-            logger.warning("WhatsApp webhook: invalid signature (dev)")
-            raise HTTPException(status_code=403, detail="Invalid signature")
+    if not _signature_ok(request, params, x_twilio_signature):
+        logger.warning("Twilio webhook: invalid signature from %s", params.get("From"))
+        raise HTTPException(status_code=403, detail="Invalid signature")
 
-    try:
-        payload = json.loads(raw_body) if raw_body else {}
-    except Exception:
-        payload = {}
+    sender = _strip_whatsapp_prefix(params.get("From"))
+    body = (params.get("Body") or "").strip()
 
-    # Return 200 to Meta before any processing
-    background.add_task(_process_webhook, payload)
-    return Response(status_code=200)
+    if sender and body:
+        background.add_task(_process_message, sender, body)
+
+    return Response(content=_TWIML_EMPTY, media_type="application/xml")
 
 
-async def _process_webhook(payload: dict) -> None:
+async def _process_message(sender: str, body: str) -> None:
     from app.database import AsyncSessionLocal
 
     try:
-        for entry in payload.get("entry") or []:
-            for change in entry.get("changes") or []:
-                value = change.get("value") or {}
-                for msg in value.get("messages") or []:
-                    sender = msg.get("from")
-                    if not sender:
-                        continue
+        count = await set_rate_limit(sender)
+        if count > _RATE_LIMIT_MAX:
+            logger.warning("Rate limit: %s (%d msg/min)", sender, count)
+            return
 
-                    count = await set_rate_limit(sender)
-                    if count > _RATE_LIMIT_MAX:
-                        logger.warning("Rate limit: %s (%d msg/min)", sender, count)
-                        continue
-
-                    text = _extract_text(msg)
-                    if text is None:
-                        continue
-
-                    async with AsyncSessionLocal() as db:
-                        await route_message(sender, text, db)
+        async with AsyncSessionLocal() as db:
+            await route_message(sender, body, db)
     except Exception:
-        logger.exception("Error processing WhatsApp webhook payload")
+        logger.exception("Error processing Twilio webhook message from %s", sender)
 
 
-def _extract_text(msg: dict) -> str | None:
-    msg_type = msg.get("type")
-    if msg_type == "text":
-        return (msg.get("text") or {}).get("body", "").strip() or None
-    if msg_type == "interactive":
-        interactive = msg.get("interactive") or {}
-        if interactive.get("type") == "list_reply":
-            return (interactive.get("list_reply") or {}).get("title", "").strip() or None
-        if interactive.get("type") == "button_reply":
-            return (interactive.get("button_reply") or {}).get("title", "").strip() or None
-    return None
+def _strip_whatsapp_prefix(value: str | None) -> str:
+    raw = str(value or "").strip()
+    if raw.lower().startswith("whatsapp:"):
+        raw = raw.split(":", 1)[1]
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    return digits
 
 
-def _valid_signature(raw_body: bytes, signature: str) -> bool:
-    expected = "sha256=" + hmac.new(
-        settings.meta_app_secret.encode(),
-        raw_body,
-        hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(expected, signature)
+def _signature_ok(request: Request, params: dict, signature: str | None) -> bool:
+    if not settings.twilio_webhook_validate:
+        return True
+    if not signature or not settings.twilio_auth_token:
+        return False
+
+    try:
+        from twilio.request_validator import RequestValidator
+    except ImportError:
+        logger.error("twilio package not installed; cannot validate webhook signature")
+        return False
+
+    validator = RequestValidator(settings.twilio_auth_token)
+    url = _signed_url(request)
+    return validator.validate(url, params, signature)
+
+
+def _signed_url(request: Request) -> str:
+    """Reconstruct the URL Twilio signed. If APP_PUBLIC_URL is set
+    (typical behind a reverse proxy / ngrok), prefer it."""
+    if settings.app_public_url:
+        base = settings.app_public_url.rstrip("/")
+        return f"{base}{request.url.path}"
+    return str(request.url)

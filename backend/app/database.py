@@ -91,6 +91,39 @@ def normalize_known_schema_drift(connection):
             """
         )
 
+    if "stores" in existing_tables:
+        columns = {column["name"] for column in inspector.get_columns("stores")}
+        if "slug" not in columns:
+            connection.exec_driver_sql("ALTER TABLE stores ADD COLUMN slug VARCHAR(180)")
+        if "store_slug" not in columns:
+            connection.exec_driver_sql("ALTER TABLE stores ADD COLUMN store_slug VARCHAR(180)")
+        connection.exec_driver_sql(
+            """
+            UPDATE stores
+            SET slug = COALESCE(
+                NULLIF(slug, ''),
+                NULLIF(store_slug, ''),
+                'store-' || replace(id::text, '-', '')
+            )
+            WHERE slug IS NULL OR slug = ''
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            UPDATE stores
+            SET store_slug = COALESCE(NULLIF(store_slug, ''), slug)
+            WHERE store_slug IS NULL OR store_slug = ''
+            """
+        )
+        connection.exec_driver_sql("ALTER TABLE stores ALTER COLUMN slug SET NOT NULL")
+        connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_stores_slug ON stores(slug)"
+        )
+        connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_stores_store_slug "
+            "ON stores(store_slug) WHERE store_slug IS NOT NULL"
+        )
+
 
 add_missing_sqlite_columns = add_missing_model_columns
 

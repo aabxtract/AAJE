@@ -78,7 +78,29 @@ class LLMClient:
         if response_format:
             kwargs["response_format"] = response_format
 
-        response = await self._client.chat.completions.create(**kwargs)
+        try:
+            response = await self._client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            # Llama tool-calling commonly fails Groq's schema validator
+            # (e.g. emits array params as JSON-strings, mixes tool syntax with
+            # plain text). Don't bubble the error — return the raw failed
+            # generation so the caller can salvage it.
+            body = getattr(exc, "body", None) or {}
+            err = (body or {}).get("error") if isinstance(body, dict) else None
+            code = (err or {}).get("code") if isinstance(err, dict) else None
+            failed_gen = (err or {}).get("failed_generation") if isinstance(err, dict) else None
+            if code == "tool_use_failed" and failed_gen:
+                logger.warning(
+                    "Groq tool_use_failed — returning failed_generation as raw content for salvage"
+                )
+                return {
+                    "content": "",
+                    "tool_calls": [],
+                    "raw_failed_generation": failed_gen,
+                    "usage": {},
+                }
+            raise
+
         message = response.choices[0].message
         return {
             "content": message.content or "",

@@ -18,6 +18,7 @@ class User(Base):
     plan = Column(String(50), default="free")
     whatsapp_no = Column(String(20), unique=True, nullable=True)
     whatsapp_connected = Column(Boolean, default=False)
+    whatsapp_verified = Column(Boolean, default=False)
     location = Column(String(100))
     business_description = Column(Text)
     plan = Column(String(30), default="free")

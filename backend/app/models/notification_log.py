@@ -11,7 +11,10 @@ class NotificationLog(Base):
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"))
+    business_id = Column(Uuid(as_uuid=True), ForeignKey("stores.id", ondelete="CASCADE"))
     type = Column(String(50))
+    channel = Column(String(40), default="dashboard")
+    message = Column(Text)
     content = Column(Text)
     delivered = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

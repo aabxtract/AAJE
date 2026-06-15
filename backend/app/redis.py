@@ -172,6 +172,23 @@ async def clear_whatsapp_otp(user_id: str, whatsapp_no: str) -> None:
     await _delete(f"whatsapp_otp:{user_id}:{whatsapp_no}")
 
 
+async def increment_order_counter(year: int) -> int:
+    """Atomic per-year counter for order_ref generation. No expiry."""
+    return await _incr(f"order_seq:{year}")
+
+
+async def set_monnify_token(token: str, ttl_seconds: int = 3000) -> None:
+    """Cache Monnify access token. Default TTL 50 min (Monnify token lives 60)."""
+    await _setex("monnify:access_token", ttl_seconds, token)
+
+
+async def get_monnify_token() -> str | None:
+    value = await _get("monnify:access_token")
+    if value is None:
+        return None
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
 MAX_HISTORY_DEPTH = 10
 _HISTORY_TTL = 1800
 

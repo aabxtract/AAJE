@@ -45,7 +45,9 @@ export default function Signup() {
         phone: form.phone,
       })
 
-      const { user, token } = response.data
+      // Backend returns `access_token`; destructuring as `token` would store
+      // the literal "undefined" and break every JWT-protected call after this.
+      const { user, access_token: token } = response.data
 
       localStorage.setItem('auth_token', token)
       localStorage.setItem('aaje_user', JSON.stringify(user))

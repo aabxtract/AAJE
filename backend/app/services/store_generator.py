@@ -152,7 +152,9 @@ async def generate_slug(seed: str, db: AsyncSession) -> str:
     candidate = base
     suffix = 1
     while True:
-        existing = await db.execute(select(Store).where(Store.store_slug == candidate))
+        existing = await db.execute(
+            select(Store).where((Store.store_slug == candidate) | (Store.slug == candidate))
+        )
         if existing.scalar_one_or_none() is None:
             return candidate
         suffix += 1
