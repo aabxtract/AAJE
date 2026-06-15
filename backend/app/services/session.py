@@ -64,9 +64,9 @@ async def route_message(whatsapp_no: str, message: str, db: AsyncSession) -> Non
             whatsapp_no,
             user,
             paid.group(2).upper(),
-            allowed={"pending"},
-            new_status="paid",
-            verb="marked paid",
+            allowed={"pending", "transfer_claimed"},
+            new_status="confirmed",
+            verb="confirmed",
             db=db,
         )
         return
@@ -77,7 +77,7 @@ async def route_message(whatsapp_no: str, message: str, db: AsyncSession) -> Non
             whatsapp_no,
             user,
             delivered.group(1).upper(),
-            allowed={"paid"},
+            allowed={"confirmed", "paid"},
             new_status="delivered",
             verb="marked delivered",
             db=db,
@@ -90,7 +90,7 @@ async def route_message(whatsapp_no: str, message: str, db: AsyncSession) -> Non
             whatsapp_no,
             user,
             cancelled.group(2).upper(),
-            allowed={"pending"},
+            allowed={"pending", "transfer_claimed"},
             new_status="cancelled",
             verb="cancelled",
             db=db,
@@ -169,14 +169,14 @@ async def _handle_balance(whatsapp_no: str, user: User, db: AsyncSession) -> Non
         await db.execute(
             select(Order).where(
                 Order.store_id == store.id,
-                Order.status.in_(["paid", "delivered"]),
+                Order.status.in_(["confirmed", "paid", "delivered"]),
             )
         )
     ).scalars().all()
     total = sum((Decimal(order.total_amount or 0) for order in paid_orders), Decimal(0))
     await send_text(
         whatsapp_no,
-        f"Paid sales: {format_naira(float(total))}\nOrders paid: {len(paid_orders)}",
+        f"Confirmed sales: {format_naira(float(total))}\nOrders confirmed: {len(paid_orders)}",
     )
 
 

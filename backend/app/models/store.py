@@ -17,7 +17,7 @@ class Store(Base):
     user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     store_name = Column(String(100), nullable=False)
     slug = Column(String(100), unique=True, nullable=False)
-    store_slug = Column(String(100), unique=True, nullable=False)
+    store_slug = Column(String(100), unique=True, nullable=True)
     business_type = Column(String(40), default="physical_products")
     instagram_handle = Column(String(120))
     description = Column(Text)

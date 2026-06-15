@@ -35,7 +35,15 @@ async def create_order(session: AsyncSession, store_id: uuid.UUID, customer: dic
         prod = res.scalar_one()
         unit_price = prod.price
         line_total = Decimal(quantity) * Decimal(unit_price)
-        oi = OrderItem(order_id=order.id, product_id=product_id, quantity=quantity, unit_price=unit_price, total_price=line_total)
+        oi = OrderItem(
+            order_id=order.id,
+            product_id=product_id,
+            product_name=prod.name,
+            quantity=quantity,
+            unit_price=unit_price,
+            total_price=line_total,
+            subtotal=line_total,
+        )
         session.add(oi)
         total += line_total
     order.total_amount = total

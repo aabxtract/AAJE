@@ -29,14 +29,16 @@ class Product(Base):
 
     from sqlalchemy.orm import validates
 
-    @validates("stock_count")
-    def sync_stock_count(self, key, value):
-        if self.stock_quantity != value:
-            self.stock_quantity = value
-        return value
-
-    @validates("stock_quantity")
-    def sync_stock_quantity(self, key, value):
-        if self.stock_count != value:
-            self.stock_count = value
+    @validates("stock_count", "stock_quantity")
+    def sync_stocks(self, key, value):
+        if getattr(self, "_syncing_stock", False):
+            return value
+        self._syncing_stock = True
+        try:
+            if key == "stock_count":
+                self.stock_quantity = value
+            elif key == "stock_quantity":
+                self.stock_count = value
+        finally:
+            self._syncing_stock = False
         return value

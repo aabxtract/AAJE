@@ -141,6 +141,7 @@ async def _run_all(client: httpx.AsyncClient):
         "email": f"smoke-{uuid.uuid4().hex[:8]}@example.com",
         "password": "smoke-test-pass",
         "full_name": "Smoke Tester",
+        "phone": "+2348031234567",
     }
     r = await client.post("/auth/signup", json=signup_payload)
     check("POST /auth/signup -> 200", r.status_code == 200, r.text)
