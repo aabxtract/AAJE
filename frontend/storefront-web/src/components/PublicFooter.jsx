@@ -18,7 +18,10 @@ export default function PublicFooter() {
             </a>
           ))}
         </nav>
-        <p className="text-[#7a8494]">&copy; 2026 copyright all rights reserved.</p>
+        <div className="flex flex-col gap-1 md:items-end">
+          <p className="text-[#7a8494]">&copy; 2026 copyright all rights reserved.</p>
+          <p className="text-xs text-[#7a8494] font-medium">Operated by WEB3 LAB CONCEPT.</p>
+        </div>
       </div>
 
       <img

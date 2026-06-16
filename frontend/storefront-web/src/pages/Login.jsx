@@ -28,7 +28,10 @@ export default function Login() {
         password: form.password,
       })
 
-      const { user, token } = response.data
+      // Backend's TokenResponse uses `access_token`. Don't destructure as
+      // `token` — that ends up storing the string "undefined" and every
+      // subsequent request gets a 401 (the "can't reach AI host" symptom).
+      const { user, access_token: token } = response.data
 
       localStorage.setItem('auth_token', token)
       localStorage.setItem('aaje_user', JSON.stringify(user))
@@ -45,11 +48,11 @@ export default function Login() {
         }
       }
 
-      if (!user.onboarding_complete) {
-        navigate('/onboarding')
-      } else {
-        navigate('/dashboard')
-      }
+      // `onboarding_complete` is the WhatsApp-bot session flag (CLAUDE.md §12)
+      // and must NOT gate web routing. Every login lands on the same dashboard
+      // so new UI updates ship to old and new users alike. Users without a
+      // store see the Dashboard's empty state with a "Build my store" CTA.
+      navigate('/dashboard')
     } catch (err) {
       console.error('Login error:', err)
       setError(err.response?.data?.detail || 'Login failed. Please check your credentials.')

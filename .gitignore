@@ -19,6 +19,7 @@ meta_flow_public.pem
 *.log
 debug.log
 backend/debug.log
+backend/*.db
 
 # OS
 .DS_Store

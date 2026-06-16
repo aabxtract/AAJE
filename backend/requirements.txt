@@ -3,6 +3,7 @@ uvicorn[standard]
 gunicorn
 python-multipart
 python-dotenv
+pydantic[email]
 pydantic-settings
 sqlalchemy[asyncio]
 asyncpg
@@ -11,6 +12,9 @@ upstash-redis
 httpx
 cryptography
 passlib[bcrypt]
+python-jose[cryptography]
 pandas
 numpy
 apscheduler
+twilio
+groq

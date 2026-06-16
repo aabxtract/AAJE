@@ -11,13 +11,34 @@ class Product(Base):
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     store_id = Column(Uuid(as_uuid=True), ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
     name = Column(String(200), nullable=False)
     description = Column(Text)
+    price = Column(Numeric(12, 2), nullable=False)
     category = Column(String(100))
-    price = Column(Numeric(12, 2), nullable=False, default=0)
-    image_url = Column(String(1024))
+    image_url = Column(Text)
+    stock_count = Column(Integer, default=0)
     stock_quantity = Column(Integer, default=0)
-    low_stock_threshold = Column(Integer, default=0)
+    low_stock_threshold = Column(Integer, default=5)
     is_active = Column(Boolean, default=True)
+    is_available = Column(Boolean, default=True)
+    type = Column(String(20), default="product")
+    source = Column(String(20), default="web")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    from sqlalchemy.orm import validates
+
+    @validates("stock_count", "stock_quantity")
+    def sync_stocks(self, key, value):
+        if getattr(self, "_syncing_stock", False):
+            return value
+        self._syncing_stock = True
+        try:
+            if key == "stock_count":
+                self.stock_quantity = value
+            elif key == "stock_quantity":
+                self.stock_count = value
+        finally:
+            self._syncing_stock = False
+        return value

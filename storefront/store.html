@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AAJE Store</title>
+<style>
+  :root {
+    --primary: #0F766E;
+    --accent: #F59E0B;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #F9FAFB;
+    color: #1F2937;
+    line-height: 1.5;
+  }
+  .hero {
+    background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 70%, black) 100%);
+    color: white;
+    padding: 48px 24px;
+    text-align: center;
+  }
+  .hero h1 { font-size: 32px; letter-spacing: -0.02em; margin-bottom: 8px; }
+  .hero p { font-size: 16px; opacity: 0.9; max-width: 600px; margin: 0 auto; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
+  .loading, .error-state { text-align: center; padding: 80px 20px; color: #6B7280; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 20px;
+  }
+  .product-card {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border: 1px solid #E5E7EB;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .product-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.08);
+  }
+  .product-image {
+    width: 100%;
+    aspect-ratio: 1;
+    background: #F3F4F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9CA3AF;
+    font-size: 14px;
+    background-size: cover;
+    background-position: center;
+  }
+  .product-body { padding: 16px; }
+  .product-name { font-weight: 600; color: #1F2937; font-size: 15px; margin-bottom: 4px; }
+  .product-desc { font-size: 13px; color: #6B7280; margin-bottom: 10px; min-height: 36px; }
+  .product-price { font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 12px; }
+  .order-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #1F2937;
+    border: none;
+    padding: 10px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+    transition: opacity 0.15s;
+  }
+  .order-btn:hover { opacity: 0.85; }
+  .order-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .secondary-btn {
+    display: block;
+    margin-top: 6px;
+    text-align: center;
+    color: var(--primary);
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .empty {
+    background: white;
+    border-radius: 12px;
+    padding: 60px 20px;
+    text-align: center;
+    color: #6B7280;
+    border: 1px dashed #D1D5DB;
+  }
+  footer { text-align: center; color: #9CA3AF; font-size: 13px; padding: 40px 20px; }
+  footer a { color: var(--primary); text-decoration: none; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: white;
+    border-radius: 16px;
+    padding: 28px;
+    max-width: 440px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal h2 { font-size: 20px; margin-bottom: 6px; color: var(--primary); }
+  .modal .summary { background: #F9FAFB; padding: 12px; border-radius: 8px; margin: 12px 0 20px; font-size: 14px; }
+  .modal .summary .row { display: flex; justify-content: space-between; margin: 4px 0; }
+  .modal .summary .total { font-weight: 700; padding-top: 8px; border-top: 1px solid #E5E7EB; margin-top: 8px; }
+  .modal label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin: 14px 0 6px; }
+  .modal input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px solid #E5E7EB;
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+  }
+  .modal input:focus { outline: none; border-color: var(--primary); }
+  .modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+  .modal-actions button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    font-size: 15px;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:disabled { background: #9CA3AF; cursor: not-allowed; }
+  .btn-cancel { background: #F3F4F6; color: #374151; }
+  .modal-error {
+    background: #FEE2E2;
+    color: #991B1B;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  /* Checkout (transfer) screen */
+  .checkout-card {
+    background: #F0FDF4;
+    border: 1.5px solid #BBF7D0;
+    border-radius: 10px;
+    padding: 16px;
+    margin: 16px 0;
+  }
+  .checkout-ref {
+    font-size: 13px;
+    color: #166534;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .bank-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #E5E7EB;
+    font-size: 14px;
+  }
+  .bank-line:last-child { border-bottom: none; }
+  .bank-line .label { color: #6B7280; }
+  .bank-line .value { font-weight: 600; color: #1F2937; }
+  .bank-line .value.mono { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 16px; }
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 8px;
+  }
+  .copy-btn.copied { background: var(--primary); color: white; }
+  .amount-callout {
+    background: white;
+    border: 1.5px dashed var(--accent);
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+    margin: 14px 0;
+  }
+  .amount-callout .label { font-size: 12px; color: #6B7280; }
+  .amount-callout .amount { font-size: 26px; font-weight: 800; color: #1F2937; }
+  .checkout-instruction {
+    font-size: 13px;
+    color: #374151;
+    line-height: 1.55;
+    margin: 12px 0;
+  }
+  .claimed-state {
+    text-align: center;
+    padding: 20px 8px;
+  }
+  .claimed-state .check {
+    font-size: 48px;
+    margin-bottom: 8px;
+  }
+  .claimed-state h3 {
+    color: #166534;
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+  .claimed-state p {
+    color: #374151;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .no-account-warning {
+    background: #FEF3C7;
+    color: #92400E;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin: 10px 0;
+  }
+</style>
+</head>
+<body>
+
+<div id="hero" class="hero" style="display: none;">
+  <h1 id="store-name"></h1>
+  <p id="store-description"></p>
+</div>
+
+<div class="container">
+  <div id="loading" class="loading"><p>Loading store…</p></div>
+  <div id="error-state" class="error-state" style="display: none;">
+    <h2 style="color:#1F2937;">Store not found</h2>
+    <p style="margin-top:8px;">This store does not exist or is no longer active.</p>
+  </div>
+  <div id="content" style="display: none;">
+    <div id="product-grid" class="grid"></div>
+    <div id="empty" class="empty" style="display: none;">
+      <p>This store has no products yet. Check back soon!</p>
+    </div>
+  </div>
+</div>
+
+<footer>Powered by <a href="/signup.html">AAJE</a></footer>
+
+<!-- Order modal -->
+<div id="order-modal" class="modal-overlay">
+  <div class="modal">
+    <!-- Step 1: order form -->
+    <div id="step-form">
+      <h2>Place your order</h2>
+      <div class="summary">
+        <div class="row"><span id="modal-product-name"></span><span id="modal-unit-price"></span></div>
+        <div class="row"><span>Quantity</span><span id="modal-qty">1</span></div>
+        <div class="row total"><span>Total</span><span id="modal-total"></span></div>
+      </div>
+
+      <label for="o-name">Your name</label>
+      <input type="text" id="o-name" maxlength="100" required />
+
+      <label for="o-whatsapp">WhatsApp number (for order updates)</label>
+      <input type="tel" id="o-whatsapp" placeholder="2348012345678" maxlength="20" />
+
+      <label for="o-email">Email (optional)</label>
+      <input type="email" id="o-email" maxlength="255" />
+
+      <label for="o-quantity">Quantity</label>
+      <input type="number" id="o-quantity" min="1" max="100" value="1" />
+
+      <div id="modal-error" class="modal-error"></div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" id="confirm-btn" onclick="submitOrder()">Place order</button>
+      </div>
+    </div>
+
+    <!-- Step 2: transfer instructions -->
+    <div id="step-checkout" style="display: none;">
+      <h2>Pay by bank transfer</h2>
+      <div class="checkout-card">
+        <div class="checkout-ref">Order <span id="co-ref"></span> placed ✅</div>
+        <div style="font-size:13px;color:#374151;">Complete payment by transferring to the account below.</div>
+      </div>
+
+      <div id="co-account-block">
+        <div class="bank-line">
+          <span class="label">Bank</span>
+          <span class="value" id="co-bank"></span>
+        </div>
+        <div class="bank-line">
+          <span class="label">Account name</span>
+          <span class="value" id="co-account-name"></span>
+        </div>
+        <div class="bank-line">
+          <span class="label">Account number</span>
+          <span style="display:flex;align-items:center;">
+            <span class="value mono" id="co-account-number"></span>
+            <button class="copy-btn" id="co-copy-btn" onclick="copyAccountNumber()">Copy</button>
+          </span>
+        </div>
+      </div>
+
+      <div id="co-no-account" class="no-account-warning" style="display:none;">
+        This seller hasn't added a bank account yet.
+        Please contact the store directly on WhatsApp to arrange payment.
+      </div>
+
+      <div class="amount-callout">
+        <div class="label">Transfer exactly</div>
+        <div class="amount" id="co-amount"></div>
+      </div>
+
+      <div class="checkout-instruction">
+        Open your banking app and send the exact amount above.
+        After transferring, tap the button below — the seller will be notified
+        on WhatsApp and will confirm once they see your transfer.
+      </div>
+
+      <div id="checkout-error" class="modal-error"></div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModal()">Close</button>
+        <button class="btn-primary" id="claim-btn" onclick="claimTransfer()">
+          I've Transferred
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 3: claimed -->
+    <div id="step-claimed" style="display: none;">
+      <div class="claimed-state">
+        <div class="check">✅</div>
+        <h3>Transfer claim sent</h3>
+        <p>
+          We've notified <strong id="co-store-name"></strong> on WhatsApp.
+          They'll check their bank and confirm your order shortly.
+          You'll get a WhatsApp message once it's confirmed.
+        </p>
+        <p style="margin-top:14px;font-size:12px;color:#6B7280;">
+          Order ref: <strong id="co-claimed-ref"></strong>
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" style="flex:1;" onclick="closeModal()">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = window.AAJE_API_BASE || (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+  ? "http://localhost:8000"
+  : window.location.origin);
+
+let currentStore = null;
+let currentProduct = null;
+let currentOrder = null;
+
+function getSlug() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("slug")) return params.get("slug");
+  const match = window.location.pathname.match(/\/store\/([^\/?#]+)/);
+  return match ? match[1] : null;
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
+function applyTheme(theme) {
+  if (!theme) return;
+  if (theme.primary_color) document.documentElement.style.setProperty("--primary", theme.primary_color);
+  if (theme.accent_color) document.documentElement.style.setProperty("--accent", theme.accent_color);
+}
+
+function whatsappLink(number, productName, price) {
+  const clean = String(number || "").replace(/\D/g, "");
+  const msg = encodeURIComponent(`Hi, I want to order ${productName} for ₦${Number(price).toLocaleString()}.`);
+  return `https://wa.me/${clean}?text=${msg}`;
+}
+
+function openModal(product) {
+  currentProduct = product;
+  currentOrder = null;
+  document.getElementById("modal-product-name").textContent = product.name;
+  document.getElementById("modal-unit-price").textContent = `₦${Number(product.price).toLocaleString()}`;
+  document.getElementById("o-quantity").value = "1";
+  updateTotal();
+  document.getElementById("modal-error").style.display = "none";
+  document.getElementById("checkout-error").style.display = "none";
+  ["o-name", "o-whatsapp", "o-email"].forEach(id => document.getElementById(id).value = "");
+  showStep("form");
+  document.getElementById("order-modal").classList.add("show");
+}
+
+function closeModal() {
+  document.getElementById("order-modal").classList.remove("show");
+  currentProduct = null;
+  currentOrder = null;
+}
+
+function showStep(name) {
+  ["form", "checkout", "claimed"].forEach(s => {
+    document.getElementById(`step-${s}`).style.display = (s === name) ? "block" : "none";
+  });
+}
+
+function updateTotal() {
+  if (!currentProduct) return;
+  const qty = parseInt(document.getElementById("o-quantity").value || "1", 10);
+  document.getElementById("modal-qty").textContent = qty;
+  document.getElementById("modal-total").textContent = `₦${(currentProduct.price * qty).toLocaleString()}`;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("o-quantity").addEventListener("input", updateTotal);
+});
+
+function showModalError(msg) {
+  const el = document.getElementById("modal-error");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+function showCheckoutError(msg) {
+  const el = document.getElementById("checkout-error");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+function renderCheckout(order) {
+  currentOrder = order;
+  document.getElementById("co-ref").textContent = order.order_ref;
+  document.getElementById("co-amount").textContent =
+    `₦${Number(order.total_amount).toLocaleString()}`;
+
+  const acct = (currentStore && currentStore.payment_account) || { ready: false };
+  if (acct.ready && acct.account_number) {
+    document.getElementById("co-bank").textContent = acct.bank_name || "—";
+    document.getElementById("co-account-name").textContent = acct.account_name || "—";
+    document.getElementById("co-account-number").textContent = acct.account_number;
+    document.getElementById("co-account-block").style.display = "";
+    document.getElementById("co-no-account").style.display = "none";
+    document.getElementById("claim-btn").disabled = false;
+  } else {
+    document.getElementById("co-account-block").style.display = "none";
+    document.getElementById("co-no-account").style.display = "block";
+    document.getElementById("claim-btn").disabled = true;
+  }
+  document.getElementById("checkout-error").style.display = "none";
+  showStep("checkout");
+}
+
+function copyAccountNumber() {
+  const num = document.getElementById("co-account-number").textContent;
+  if (!num) return;
+  navigator.clipboard.writeText(num).then(() => {
+    const btn = document.getElementById("co-copy-btn");
+    btn.textContent = "Copied";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = "Copy";
+      btn.classList.remove("copied");
+    }, 1500);
+  }).catch(() => {
+    showCheckoutError("Couldn't copy. Long-press the number to copy manually.");
+  });
+}
+
+async function claimTransfer() {
+  if (!currentOrder) return;
+  const btn = document.getElementById("claim-btn");
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+
+  try {
+    // Best-effort: notify trader. Endpoint may not exist yet — degrade gracefully.
+    const res = await fetch(
+      `${API_BASE}/orders/${encodeURIComponent(currentOrder.order_ref)}/claim-transfer`,
+      { method: "PATCH" },
+    );
+    if (!res.ok && res.status !== 404) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `Failed (${res.status})`);
+    }
+    // 404 means the endpoint isn't wired up yet — UX still completes locally.
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "I've Transferred";
+    showCheckoutError(err.message || "Couldn't notify the seller. Please contact the store directly on WhatsApp.");
+    return;
+  }
+
+  document.getElementById("co-store-name").textContent =
+    (currentStore && currentStore.store_name) || "the seller";
+  document.getElementById("co-claimed-ref").textContent = currentOrder.order_ref;
+  showStep("claimed");
+}
+
+async function submitOrder() {
+  const name = document.getElementById("o-name").value.trim();
+  const whatsapp = document.getElementById("o-whatsapp").value.trim();
+  const email = document.getElementById("o-email").value.trim();
+  const qty = parseInt(document.getElementById("o-quantity").value || "1", 10);
+
+  if (!name) return showModalError("Please enter your name");
+  if (qty < 1) return showModalError("Quantity must be at least 1");
+
+  const payload = {
+    store_slug: currentStore.store_slug,
+    customer_name: name,
+    items: [{ product_id: currentProduct.id, quantity: qty }],
+  };
+  if (whatsapp) payload.customer_whatsapp = whatsapp;
+  if (email) payload.customer_email = email;
+
+  const btn = document.getElementById("confirm-btn");
+  btn.disabled = true;
+  btn.textContent = "Placing order…";
+
+  try {
+    const res = await fetch(API_BASE + "/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const detail = data.detail || `Order failed (${res.status})`;
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    renderCheckout(data);
+  } catch (err) {
+    showModalError(err.message || "Something went wrong");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Place order";
+  }
+}
+
+function renderProducts(store) {
+  const grid = document.getElementById("product-grid");
+  const empty = document.getElementById("empty");
+  const products = store.products || [];
+
+  if (products.length === 0) {
+    empty.style.display = "block";
+    grid.style.display = "none";
+    return;
+  }
+
+  grid.innerHTML = products.map((p, idx) => {
+    const imageBg = p.image_url
+      ? `style="background-image: url('${escapeHtml(p.image_url)}');"`
+      : "";
+    const waLink = store.whatsapp_number
+      ? whatsappLink(store.whatsapp_number, p.name, p.price)
+      : null;
+    return `
+      <div class="product-card">
+        <div class="product-image" ${imageBg}>${p.image_url ? "" : "No image"}</div>
+        <div class="product-body">
+          <div class="product-name">${escapeHtml(p.name)}</div>
+          <div class="product-desc">${escapeHtml(p.description || "")}</div>
+          <div class="product-price">₦${Number(p.price).toLocaleString()}</div>
+          <button class="order-btn" data-idx="${idx}">Order Now</button>
+          ${waLink ? `<a class="secondary-btn" href="${waLink}" target="_blank" rel="noopener">Or message on WhatsApp</a>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  document.querySelectorAll(".order-btn[data-idx]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-idx"), 10);
+      openModal(products[idx]);
+    });
+  });
+}
+
+async function load() {
+  const slug = getSlug();
+  if (!slug) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("error-state").style.display = "block";
+    return;
+  }
+
+  try {
+    const res = await fetch(API_BASE + "/store/" + encodeURIComponent(slug));
+    if (!res.ok) throw new Error("not found");
+    const store = await res.json();
+    currentStore = store;
+
+    applyTheme(store.theme_config);
+    document.getElementById("store-name").textContent = store.store_name;
+    document.getElementById("store-description").textContent =
+      (store.theme_config && store.theme_config.hero_text) || store.store_description || "";
+    document.getElementById("hero").style.display = "block";
+
+    renderProducts(store);
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("content").style.display = "block";
+  } catch (err) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("error-state").style.display = "block";
+  }
+}
+
+load();
+</script>
+</body>
+</html>

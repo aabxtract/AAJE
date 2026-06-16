@@ -1,96 +1,51 @@
+"""
+Legacy whatsapp service module — kept as a thin shim over
+``app.services.whatsapp_client`` (Twilio for MVP).
+
+Older code paths import from ``app.whatsapp.service`` directly. To keep
+them working without touching every callsite during the Twilio swap, this
+module re-exports the canonical client functions. New code should import
+from ``app.services.whatsapp_client``.
+
+Meta-specific features (Flows, native CTA buttons, list messages) are
+intentionally degraded to plain text for MVP. They return when the Meta
+migration lands in June 2026 (CLAUDE.md §20).
+"""
+from __future__ import annotations
+
 import logging
+from typing import Iterable
 
-import httpx
-
-from app.config import settings
+from app.services.whatsapp_client import (
+    send_image,
+    send_text,
+)
+from app.services.whatsapp_client import send_cta_link as _send_cta_link
 
 logger = logging.getLogger(__name__)
 
 
-def _url() -> str:
-    return (
-        f"https://graph.facebook.com/{settings.meta_graph_api_version}/"
-        f"{settings.meta_phone_number_id}/messages"
-    )
-
-
-def _headers() -> dict:
-    return {
-        "Authorization": f"Bearer {settings.meta_whatsapp_token}",
-        "Content-Type": "application/json",
-    }
-
-
-def _credentials_configured() -> bool:
-    return bool(settings.meta_phone_number_id and settings.meta_whatsapp_token)
-
-
-async def _post(payload: dict) -> dict:
-    if not _credentials_configured():
-        message_type = payload.get("type", "unknown")
-        recipient = payload.get("to", "unknown")
-        if settings.app_env.lower() == "production":
-            raise RuntimeError("Meta WhatsApp credentials are not configured")
-        logger.warning(
-            "Skipping outbound WhatsApp %s to %s because Meta credentials are not configured.",
-            message_type,
-            recipient,
-        )
-        return {"status": "skipped_unconfigured_whatsapp"}
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(_url(), headers=_headers(), json=payload)
-    if response.status_code >= 300:
-        logger.error("Meta WhatsApp API error %s: %s", response.status_code, response.text)
-    response.raise_for_status()
-    return response.json()
-
-
 async def send_translated(to: str, message: str, language: str = "en") -> dict:
-    """
-    Translate ``message`` into the user's chosen language via the LLM,
-    then send it.  Falls back to raw English if translation fails, returns empty,
-    or is not needed (language == 'en').
-    """
-    from app.intelligence.llm import translate_message  # lazy import avoids circular deps
+    """Translate ``message`` into the user's chosen language via the LLM,
+    then send it. Falls back to the original message on translation failure
+    or when ``language == 'en'``."""
+    from app.intelligence.llm import translate_message  # lazy import
+
     translated = await translate_message(message, language)
-    # Fallback to original message if translation failed or returned empty
-    final_message = translated if (translated and translated.strip()) else message
-    return await send_text(to, final_message)
+    final = translated if (translated and translated.strip()) else message
+    return await send_text(to, final)
 
 
-async def send_text(to: str, message: str) -> dict:
-    if not message or not message.strip():
-        logger.warning("Attempted to send empty text to %s, skipping", to)
-        return {"status": "skipped_empty"}
-    
-    return await _post({
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"preview_url": False, "body": message},
-    })
-
-
-async def send_buttons(to: str, body: str, buttons: list[str]) -> dict:
-    options = "\n".join(f"{index + 1}. {label}" for index, label in enumerate(buttons))
+async def send_buttons(to: str, body: str, buttons: Iterable[str]) -> dict:
+    """Plain-text numbered list (MVP). Real interactive list messages
+    return when Meta WABA migration lands in June 2026."""
+    options = "\n".join(f"{i + 1}. {label}" for i, label in enumerate(buttons))
     return await send_text(to, f"{body}\n\n{options}")
 
 
 async def send_cta_button(to: str, body: str, button_label: str, url: str) -> dict:
-    return await _post({
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "cta_url",
-            "body": {"text": body},
-            "action": {
-                "name": "cta_url",
-                "parameters": {"display_text": button_label, "url": url},
-            },
-        },
-    })
+    """Alias for :func:`send_cta_link`. Kept for legacy callers."""
+    return await _send_cta_link(to, body, button_label, url)
 
 
 async def send_flow(
@@ -102,28 +57,25 @@ async def send_flow(
     screen: str = "START",
     data: dict | None = None,
 ) -> dict:
-    payload = {"screen": screen}
-    if data:
-        payload["data"] = data
+    """Meta WhatsApp Flows are not supported on Twilio.
 
-    return await _post({
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "flow",
-            "body": {"text": body},
-            "action": {
-                "name": "flow",
-                "parameters": {
-                    "mode": "published",
-                    "flow_message_version": "3",
-                    "flow_id": flow_id,
-                    "flow_token": flow_token,
-                    "flow_cta": cta,
-                    "flow_action": "navigate",
-                    "flow_action_payload": payload,
-                },
-            },
-        },
-    })
+    For MVP we log and degrade to a plain text message pointing at a
+    hosted equivalent. The full Flow experience returns alongside the
+    June 2026 Meta migration.
+    """
+    logger.warning(
+        "send_flow called for flow %s but Flows are disabled in MVP (Twilio). "
+        "Sending plain-text fallback.",
+        flow_id,
+    )
+    return await send_text(to, body)
+
+
+__all__ = [
+    "send_text",
+    "send_image",
+    "send_translated",
+    "send_buttons",
+    "send_cta_button",
+    "send_flow",
+]

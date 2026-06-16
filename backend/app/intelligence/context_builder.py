@@ -1,157 +1,172 @@
-from datetime import datetime, timezone
+"""Trader context for the WhatsApp agent.
 
-from sqlalchemy import select
+Builds a clean dict from the database that LLM Call 2 consumes to generate
+a personalized response. Run pii_scrubber.scrub() on the result before
+passing to the LLM (CLAUDE.md §13, §18 rule 10).
+"""
+from __future__ import annotations
+
+import logging
+from datetime import date, timedelta
+from decimal import Decimal
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.commerce import Order, Product, Store
-from app.models.income_stream import IncomeStream
-from app.models.intelligence import BizPrintSnapshot
-from app.models.money import Wallet
-from app.models.score import Score
+from app.models.bizprint import BizPrint
+from app.models.order import Order
+from app.models.product import Product
+from app.models.store import Store
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.models.vault import Vault
+from app.models.wallet import Wallet
+
+logger = logging.getLogger(__name__)
 
 
-async def determine_persona(db: AsyncSession, user: User) -> str:
-    store = (await db.execute(select(Store).where(Store.user_id == user.id))).scalar_one_or_none()
+async def build_context(db: AsyncSession, user: User) -> dict:
+    """Build the trader context dict.
+
+    Returns a dict shaped for the system prompt's ``{scrubbed_context}`` slot.
+    Falls back to a minimal dict on DB error so the agent can still respond.
+    """
+    try:
+        return await _build(db, user)
+    except Exception:
+        logger.exception("Context build failed; returning minimal context")
+        return _minimal_context(user)
+
+
+async def _build(db: AsyncSession, user: User) -> dict:
+    store = (
+        await db.execute(select(Store).where(Store.user_id == user.id))
+    ).scalar_one_or_none()
+
+    wallet = (
+        await db.execute(select(Wallet).where(Wallet.user_id == user.id))
+    ).scalar_one_or_none()
+
+    bizprint = (
+        await db.execute(
+            select(BizPrint)
+            .where(BizPrint.user_id == user.id)
+            .order_by(BizPrint.computed_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    product_count = 0
+    pending_orders = 0
+    today_revenue = Decimal("0")
+    recent_orders: list[dict] = []
+
     if store:
-        return "storefront_operations"
-    return "storefront_unlinked"
+        product_count = (
+            await db.scalar(
+                select(func.count(Product.id)).where(
+                    Product.store_id == store.id, Product.is_available.is_(True)
+                )
+            )
+        ) or 0
 
+        pending_orders = (
+            await db.scalar(
+                select(func.count(Order.id)).where(
+                    Order.store_id == store.id, Order.status == "pending"
+                )
+            )
+        ) or 0
 
-async def build_context(db: AsyncSession, user: User, persona: str | None = None) -> dict:
-    persona = persona or await determine_persona(db, user)
-    base = {
-        "persona": persona,
-        "user": {
-            "id": str(user.id),
-            "name": user.full_name,
-            "phone": user.whatsapp_no,
+        today_revenue = Decimal(
+            str(
+                (
+                    await db.scalar(
+                        select(func.coalesce(func.sum(Order.total_amount), 0)).where(
+                            Order.store_id == store.id,
+                            Order.payment_status == "paid",
+                            func.date(Order.created_at) == date.today(),
+                        )
+                    )
+                )
+                or 0
+            )
+        )
+
+        recent_order_rows = (
+            await db.execute(
+                select(Order)
+                .where(Order.store_id == store.id)
+                .order_by(Order.created_at.desc())
+                .limit(5)
+            )
+        ).scalars().all()
+        recent_orders = [
+            {
+                "order_ref": o.order_ref,
+                "customer_name": o.customer_name,
+                "amount": float(o.total_amount or 0),
+                "status": o.status,
+                "payment_status": o.payment_status,
+            }
+            for o in recent_order_rows
+        ]
+
+    from app.utils.formatters import build_store_url
+
+    return {
+        "trader": {
+            "full_name": user.full_name,  # scrubbed to first name later
             "language": user.preferred_language or "en",
+            "onboarding_complete": bool(user.onboarding_complete),
         },
-        "whatsapp": {
-            "connected": bool(user.whatsapp_connected),
-            "tier": "premium",
-            "role": "storefront_operations_extension",
-        },
-    }
-    if persona == "storefront_operations":
-        base.update(await _storefront_context(db, user))
-    else:
-        base.update({"store": None, "products": [], "orders": [], "sales": {}, "recent_alerts": []})
-    return base
-
-
-async def _storefront_context(db: AsyncSession, user: User) -> dict:
-    stores = (await db.execute(select(Store).where(Store.user_id == user.id))).scalars().all()
-    store = stores[0] if stores else None
-    if not store:
-        return {"store": None, "products": [], "orders": [], "sales": {}, "recent_alerts": []}
-
-    products = (await db.execute(select(Product).where(Product.store_id == store.id))).scalars().all()
-    orders = (await db.execute(select(Order).where(Order.store_id == store.id).order_by(Order.created_at.desc()))).scalars().all()
-    transactions = (await db.execute(select(Transaction).where(Transaction.store_id == store.id).order_by(Transaction.timestamp.desc()))).scalars().all()
-    score = (await db.execute(select(Score).where(Score.user_id == user.id))).scalar_one_or_none()
-    vault_rows = (await db.execute(select(Vault).where(Vault.user_id == user.id))).scalars().all()
-    wallet = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalar_one_or_none()
-    latest_bizprint = (await db.execute(
-        select(BizPrintSnapshot).where(BizPrintSnapshot.store_id == store.id).order_by(BizPrintSnapshot.created_at.desc())
-    )).scalar_one_or_none()
-
-    today = datetime.now(timezone.utc).date()
-    paid_today = [
-        order for order in orders
-        if order.payment_status == "paid" and order.paid_at and order.paid_at.date() == today
-    ]
-    public_base = (settings.frontend_url or settings.app_public_url or "").rstrip("/")
-    store_path = f"/store/{store.slug}"
-    store_link = f"{public_base}{store_path}" if public_base else store_path
-    return {
-        "store": {
-            "id": str(store.id),
-            "name": store.store_name,
-            "slug": store.slug,
-            "link": store_link,
-            "has_squad_account": store.has_squad_account,
-            "squad_virtual_account_number": store.squad_virtual_account_number,
-        },
-        "products": [
+        "store": (
             {
-                "id": str(product.id),
-                "name": product.name,
-                "category": product.category,
-                "price": float(product.price or 0),
-                "stock_quantity": product.stock_quantity or 0,
-                "low_stock_threshold": product.low_stock_threshold or 0,
+                "name": store.store_name,
+                "slug": store.store_slug,
+                "public_url": build_store_url(store.store_slug),
+                "is_published": bool(store.is_published),
+                "product_count": int(product_count),
             }
-            for product in products
-        ],
-        "orders": [
+            if store
+            else None
+        ),
+        "wallet": (
             {
-                "id": str(order.id),
-                "customer_name": order.customer_name,
-                "total_amount": float(order.total_amount or 0),
-                "payment_status": order.payment_status,
-                "order_status": order.order_status,
-                "created_at": str(order.created_at),
+                "available_balance": float(wallet.available_balance or 0),
+                "total_earned": float(wallet.total_earned or 0),
+                "total_orders_paid": int(wallet.total_orders_paid or 0),
             }
-            for order in orders[:10]
-        ],
-        "sales": {
-            "today_amount": float(sum(order.total_amount or 0 for order in paid_today)),
-            "today_count": len(paid_today),
-            "total_paid_amount": float(sum(order.total_amount or 0 for order in orders if order.payment_status == "paid")),
+            if wallet
+            else {"available_balance": 0, "total_earned": 0, "total_orders_paid": 0}
+        ),
+        "today": {
+            "revenue": float(today_revenue),
+            "pending_orders": int(pending_orders),
         },
-        "transactions": [{"amount": float(tx.amount), "type": tx.type, "source": tx.source} for tx in transactions[:10]],
-        "score": _score_payload(score),
-        "vaults": [{"id": str(v.id), "name": v.name, "balance": float(v.current_balance or 0)} for v in vault_rows],
-        "wallet": _wallet_payload(wallet),
-        "bizprint": latest_bizprint.snapshot_json if latest_bizprint else None,
-        "recent_alerts": [
-            {"type": "inventory_low", "product": p.name, "stock_quantity": p.stock_quantity}
-            for p in products if (p.stock_quantity or 0) <= (p.low_stock_threshold or 0)
-        ],
+        "recent_orders": recent_orders,
+        "bizprint": (
+            {
+                "score": float(bizprint.trader_score or 0),
+                "grade": bizprint.credit_grade or "—",
+                "loan_ceiling": float(bizprint.recommended_loan_ceiling or 0),
+            }
+            if bizprint
+            else None
+        ),
     }
 
 
-async def _business_manager_context(db: AsyncSession, user: User) -> dict:
-    streams = (await db.execute(select(IncomeStream).where(IncomeStream.user_id == user.id))).scalars().all()
-    vaults = (await db.execute(select(Vault).where(Vault.user_id == user.id))).scalars().all()
-    wallet = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalar_one_or_none()
-    transactions = (await db.execute(select(Transaction).where(Transaction.user_id == user.id).order_by(Transaction.timestamp.desc()))).scalars().all()
-    score = (await db.execute(select(Score).where(Score.user_id == user.id))).scalar_one_or_none()
+def _minimal_context(user: User) -> dict:
     return {
-        "business_streams": [{"id": str(stream.id), "name": stream.stream_name, "type": stream.stream_type} for stream in streams],
-        "vaults": [{"id": str(vault.id), "name": vault.name, "balance": float(vault.current_balance or 0)} for vault in vaults],
-        "wallet": _wallet_payload(wallet),
-        "transactions": [
-            {"amount": float(tx.amount), "type": tx.type, "narration": tx.narration, "source": tx.source, "date": str(tx.timestamp)}
-            for tx in transactions[:10]
-        ],
-        "score": _score_payload(score),
-        "receipt_records": [],
-        "reports": {"recent_transaction_count": len(transactions)},
-    }
-
-
-def _score_payload(score: Score | None) -> dict:
-    if not score:
-        return {"score": 0, "grade": None, "data_quality": "low", "recommended_loan_range": None}
-    return {
-        "score": float(score.trader_score or 0),
-        "grade": score.credit_grade,
-        "data_quality": score.data_quality,
-        "recommended_loan_range": float(score.recommended_loan_ceiling or 0),
-    }
-
-
-def _wallet_payload(wallet: Wallet | None) -> dict:
-    if not wallet:
-        return {"available_balance": 0, "total_earned": 0, "total_withdrawn": 0}
-    return {
-        "available_balance": float(wallet.available_balance or 0),
-        "total_earned": float(wallet.total_earned or 0),
-        "total_withdrawn": float(wallet.total_withdrawn or 0),
+        "trader": {
+            "full_name": user.full_name or "",
+            "language": user.preferred_language or "en",
+            "onboarding_complete": bool(user.onboarding_complete),
+        },
+        "store": None,
+        "wallet": {"available_balance": 0, "total_earned": 0, "total_orders_paid": 0},
+        "today": {"revenue": 0, "pending_orders": 0},
+        "recent_orders": [],
+        "bizprint": None,
     }

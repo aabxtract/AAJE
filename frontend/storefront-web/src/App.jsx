@@ -1,4 +1,4 @@
-import { Route, Routes, Navigate } from 'react-router-dom'
+import { Route, Routes, Navigate, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import Landing from './pages/Landing'
 import Pricing from './pages/Pricing'
@@ -17,8 +17,7 @@ import StoreSetup from './pages/admin/StoreSetup.jsx'
 import Campaigns from './pages/admin/Campaigns.jsx'
 import BizPrint from './pages/admin/BizPrint.jsx'
 import StorePage from './pages/store/[slug].jsx'
-import Checkout from './pages/checkout/index.jsx'
-import PaymentSuccess from './pages/payment-success/index.jsx'
+import { detectStoreSlug } from './lib/subdomain'
 
 function ProtectedRoute({ children }) {
   const [user, setUser] = useState(null)
@@ -49,6 +48,13 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+  // On a subdomain, render ONLY the storefront for that slug. No router needed
+  // because there's only one path on a buyer subdomain.
+  const subdomain = detectStoreSlug()
+  if (subdomain) {
+    return <StorePage slug={subdomain} />
+  }
+
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
@@ -77,13 +83,37 @@ export default function App() {
       <Route path="/admin/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
       <Route path="/admin/bizprint" element={<ProtectedRoute><BizPrint /></ProtectedRoute>} />
 
-      {/* Public storefront + checkout */}
-      <Route path="/store/:slug" element={<StorePage />} />
-      <Route path="/checkout" element={<Checkout />} />
-      <Route path="/payment-success" element={<PaymentSuccess />} />
+      {/* Legacy /store/:slug - redirect to subdomain */}
+      <Route path="/store/:slug" element={<LegacyStoreRedirect />} />
 
       {/* Default redirect */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+  )
+}
+
+
+function LegacyStoreRedirect() {
+  const { slug } = useParams()
+  useEffect(() => {
+    if (!slug) return
+    const host = window.location.hostname
+    let target
+    if (host.endsWith('aaje.store')) {
+      target = `${window.location.protocol}//${slug}.aaje.store${window.location.search}`
+    } else if (host.includes('localtest.me') || host === 'localhost') {
+      const port = window.location.port ? `:${window.location.port}` : ''
+      target = `${window.location.protocol}//${slug}.localtest.me${port}${window.location.search}`
+    } else {
+      // Fallback: just render in place (dev/preview hostnames we don't know about)
+      return
+    }
+    window.location.replace(target)
+  }, [slug])
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-gray-50 text-sm text-gray-500">
+      Redirecting to {slug}.aaje.store...
+    </main>
   )
 }
